@@ -1,0 +1,11 @@
+**/*.geojson
+**/*.json
+**/.DS_Store
+
+.bloop/
+.metals/
+.scalafmt.conf
+2
+project
+target
+*.geojson
