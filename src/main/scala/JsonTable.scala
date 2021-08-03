@@ -25,15 +25,15 @@ class JsonTable(val _schema: StructType, val jsonOptions: JsonOptions)
     }
     // do partitioning here and serialize for later use
     // createPartitions in JsonBatch is called twice by Spark for some reason
+   
     if (_jsonOptions.partitions == null) {
-      if (_jsonOptions.partitioningStrategy.equals("fullPass")) {
-        println("Creating partitions with a full pass ...")
+        println("Creating partitions with a full pass...")
         _jsonOptions.partitions = Partitioning.fullPass(_jsonOptions)
-      } else {
+    }  else if(_jsonOptions.partitioningStrategy.equals("speculation")) {
+        println("Creating partitions with speculation...")
         _jsonOptions.partitions =
-          Partitioning.getFilePartitions(_jsonOptions.filePaths).toArray
+          Partitioning.speculation(_jsonOptions)
       }
-    }
 
     return new JsonScanBuilder(_schema, _jsonOptions)
   }

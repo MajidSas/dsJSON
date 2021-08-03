@@ -12,8 +12,6 @@ object PathProcessor {
     var index = 1;
     path_string = path_string.substring(index)
     while(path_string.length() > 0) {
-      // println("Current path_string: " + path_string)
-
       // checking for '.' or '..'
       if(path_string.matches("\\.{2}.*")){
         throw new Exception("Descendent elements is currently not supported.")
@@ -21,8 +19,6 @@ object PathProcessor {
       else if(path_string.matches("\\..*")){
         index += 1
         path_string = path_string.substring(1)
-        // tokens.append(".");
-        // println("matches one dot")
       } else {
         throw new Exception("Invalid JSONPath format: looking for '.' or '..' at index " + index.toString())
       }

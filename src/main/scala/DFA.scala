@@ -3,7 +3,7 @@ package edu.ucr.cs.bdlab
 
 class State(val stateType: String,
             val value: String,
-            var skip: Int,
+            var skip: Int, // for array indexing (not used)
             var accept: Int)
 {
 
@@ -38,9 +38,8 @@ class DFA() {
         } else {
           accept = pathTokens(i+2).toInt - skip
         }
-        // this.states.append(new State("array", "[", skip, accept))
         this.states.append(new State("array", ",", skip, accept))
-        i=i+3
+        i=i+3 // skip array indexing <> TODO parse filters if any
       } else {
         this.states.append(new State("token", token.toString, 0 , 1))
         this.tokens.append((token.toString, states.size))
@@ -77,13 +76,11 @@ class DFA() {
   }
   def toNextState() {
     currentState = currentState+1
-    // println("updateState", currentState)
   }
   def toNextStateIfArray() : Boolean = {
     if(currentState < states.size) {
       if(states(currentState).stateType.equals("array")){
         currentState = currentState+1
-        // println("updateStateArray", currentState)
         return true
       }
     }
@@ -97,7 +94,6 @@ class DFA() {
   }
 
   def checkToken(input : String, level : Int) : String = {
-    // println(input, states(currentState-1).value)
     if(level == currentState+1 && input.equals(states(currentState).value)){
       toNextState()
       if(currentState == states.size) {
@@ -110,7 +106,6 @@ class DFA() {
   }
 
   def checkArray() : String = {
-    // println("checkArray", currentState, states.size, states(currentState-1).stateType)
     if(currentState == states.size){
       if(states(currentState-1).stateType.equals("array")) {
         return "accept"

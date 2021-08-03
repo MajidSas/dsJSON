@@ -14,207 +14,6 @@ import org.apache.hadoop.util.hash.Hash
 import javax.xml.crypto.Data
 object SchemaInference {
 
-  // def getType(value: Any): DataType = {
-  //   value match {
-  //     case _: Double  => return DoubleType
-  //     case _: String  => return StringType
-  //     case _: Boolean => return BooleanType
-  //     case _: List[_] => {
-  //       val arr = value.asInstanceOf[List[_]]
-  //       if (arr.size > 0) {
-  //         val element = arr(0)
-  //         if (element.isInstanceOf[HashMap[_, _]]) {
-  //           return ArrayType(getStruct(element))
-  //         } else {
-  //           return ArrayType(getType(element))
-  //         }
-  //       } else {
-  //         return ArrayType(NullType)
-  //       }
-  //     }
-  //     case _ => return NullType
-  //   }
-  // if (value.isInstanceOf[Double]) {
-  //   return DoubleType
-  // } else if (value.isInstanceOf[String]) {
-  //   return StringType
-  // } else if (value.isInstanceOf[ArrayBuffer[Any]]) {
-  //   val arr = value.asInstanceOf[ArrayBuffer[Any]]
-  //   if (arr.size > 0) {
-  //     val element = arr(0)
-  //     if (element.isInstanceOf[HashMap[String, Any]]) {
-  //       return ArrayType(getStruct(element))
-  //     } else {
-  //       return ArrayType(getType(element))
-  //     }
-
-  //   } else {
-  //     return ArrayType(NullType)
-  //   }
-  // } else if (value.isInstanceOf[Boolean]) {
-  //   return BooleanType
-  // }
-  // return NullType
-  // }
-  // def getField(key: String, value: Any): StructField = {
-  //   return StructField(key, getType(value), true)
-  // }
-
-  // def getStruct(record: Any): StructType = {
-  //   var struct = new StructType()
-
-  //   for ((k, v) <- record.asInstanceOf[HashMap[String, Any]]) {
-  //     if (v.isInstanceOf[HashMap[_, _]]) {
-  //       struct = struct.add(StructField(k, getStruct(v), true))
-  //     } else {
-  //       struct = struct.add(getField(k, v))
-  //     }
-  //   }
-
-  //   return struct
-  // }
-
-  // def nullToString(schema: StructType): StructType = {
-  //   var newSchema = new StructType()
-  //   for (field <- schema.iterator) {
-  //     if (field.dataType.isInstanceOf[ArrayType]) {
-  //       if (
-  //         field.dataType
-  //           .asInstanceOf[ArrayType]
-  //           .elementType
-  //           .isInstanceOf[NullType]
-  //       ) {
-  //         newSchema =
-  //           newSchema.add(StructField(field.name, ArrayType(StringType), true))
-  //       } else if (
-  //         field.dataType
-  //           .asInstanceOf[ArrayType]
-  //           .elementType == StructType
-  //       ) {
-  //         newSchema = newSchema.add(
-  //           StructField(
-  //             field.name,
-  //             ArrayType(nullToString(field.dataType.asInstanceOf[StructType])),
-  //             true
-  //           )
-  //         )
-  //       } else {
-  //         newSchema = newSchema.add(field)
-  //       }
-  //     } else if (field.dataType.isInstanceOf[StructType]) {
-  //       newSchema = newSchema.add(
-  //         StructField(
-  //           field.name,
-  //           nullToString(field.dataType.asInstanceOf[StructType]),
-  //           true
-  //         )
-  //       )
-  //     } else if (field.dataType.isInstanceOf[NullType]) {
-  //       newSchema = newSchema.add(StructField(field.name, StringType, true))
-  //     } else {
-  //       newSchema = newSchema.add(field)
-  //     }
-  //   }
-  //   newSchema
-
-  // }
-  // def updateSchema(schema: StructType, newField: StructField): StructType = {
-  //   // updating one field is done by iterating over all existing fields
-  //   // because fields cannot by updated so it requires copying to a new StructType
-  //   // probably should be stored as Maps and converted to StructTypes at the end
-  //   var newSchema = new StructType()
-  //   var isAdded = false
-  //   for (field <- schema.iterator) {
-  //     if (
-  //       field.name == "geometry"
-  //       && (Try(
-  //         field.dataType.asInstanceOf[StructType].apply("geometries")
-  //       ).isSuccess)
-  //     ) {
-  //       newSchema = newSchema.add(
-  //         StructField(field.name, new GeometryUDT(isCollection = true), true)
-  //       )
-  //     } else if (
-  //       field.name == "geometry"
-  //       && Try(
-  //         field.dataType.asInstanceOf[StructType].apply("coordinates")
-  //       ).isSuccess
-  //     ) {
-  //       newSchema = newSchema.add(
-  //         StructField(field.name, new GeometryUDT(isCollection = false), true)
-  //       )
-  //     } else if (field.name.equals(newField.name)) {
-  //       if (field.dataType.isInstanceOf[NullType]) { // previous is null
-  //         newSchema = newSchema.add(newField)
-  //       } else if (
-  //         field.dataType.isInstanceOf[StructType] && newField.dataType
-  //           .isInstanceOf[StructType]
-  //       ) { // both of struct -> do it recursively
-  //         var updatedField = new StructType()
-  //         for (field2 <- newField.dataType.asInstanceOf[StructType].iterator) {
-  //           updatedField =
-  //             updateSchema(field.dataType.asInstanceOf[StructType], field2)
-  //         }
-  //         newSchema = newSchema.add(StructField(field.name, updatedField, true))
-  //       } else if (
-  //         field.dataType.isInstanceOf[ArrayType] && newField.dataType
-  //           .isInstanceOf[ArrayType]
-  //       ) { // both of type array
-  //         if (
-  //           field.dataType
-  //             .asInstanceOf[ArrayType]
-  //             .elementType
-  //             .isInstanceOf[NullType]
-  //         ) { // previous array is null
-  //           newSchema = newSchema.add(newField)
-  //         } else if (
-  //           field.dataType
-  //             .asInstanceOf[ArrayType]
-  //             .elementType
-  //             .isInstanceOf[StructType] && newField.dataType
-  //             .asInstanceOf[ArrayType]
-  //             .elementType
-  //             .isInstanceOf[StructType]
-  //         ) { // both of struct, do it recursively
-
-  //           var updatedField = new StructType()
-  //           for (
-  //             field2 <- newField.dataType
-  //               .asInstanceOf[ArrayType]
-  //               .elementType
-  //               .asInstanceOf[StructType]
-  //               .iterator
-  //           ) {
-  //             updatedField = updateSchema(
-  //               field.dataType
-  //                 .asInstanceOf[ArrayType]
-  //                 .elementType
-  //                 .asInstanceOf[StructType],
-  //               field2
-  //             )
-  //           }
-  //           newSchema = newSchema.add(
-  //             StructField(field.name, ArrayType(updatedField), true)
-  //           )
-
-  //         } else {
-  //           newSchema = newSchema.add(field)
-  //         }
-  //       } else {
-  //         newSchema = newSchema.add(field)
-  //       }
-  //       isAdded = true
-  //     } else {
-  //       newSchema = newSchema.add(field)
-  //     }
-
-  //   }
-  //   if (!isAdded) {
-  //     newSchema = newSchema.add(newField)
-  //   }
-  //   return newSchema
-  // }
-
   def getTokenLevels(
       schema: StructType,
       level: Int,
@@ -223,7 +22,6 @@ object SchemaInference {
     var m: HashMap[String, Set[(Int, Int)]] = HashMap[String, Set[(Int, Int)]]()
     var m2: HashMap[String, Set[(Int, Int)]] = null
     for (field <- schema.iterator) {
-      //   println(field.name, level)
       if (field.dataType.isInstanceOf[StructType]) {
         m2 = getTokenLevels(
           field.dataType.asInstanceOf[StructType],
@@ -246,7 +44,6 @@ object SchemaInference {
           dfaState
         )
       } else if (field.dataType.isInstanceOf[GeometryUDT]) {
-        // println("GeometryType")
         m2 = getTokenLevels(
           field.dataType
             .asInstanceOf[GeometryUDT]
@@ -260,7 +57,6 @@ object SchemaInference {
         m = Parser.mergeMapSet(m, m2)
       }
       m = Parser.addToken(m, field.name, level, dfaState)
-
     }
     m
   }
@@ -276,10 +72,8 @@ object SchemaInference {
     for (token <- dfa.getTokens()) {
       for (state <- dfa.getTokenStates(token)) {
         tokenLevels = Parser.addToken(tokenLevels, token, state, state)
-
       }
     }
-
     val lastQueryToken = dfa.states.last.value;
     val schemaHasLastToken = Try(schema.apply(lastQueryToken)).isSuccess
     val isArrayLastToken = if (schemaHasLastToken && schema.length == 1) {
@@ -309,14 +103,6 @@ object SchemaInference {
     return Parser.mergeMapSet(tokenLevels, options.encounteredTokens)
 
   }
-
-  // def mergeSchema(schema1: StructType, schema2: StructType): StructType = {
-  //   var schema: StructType = schema1
-  //   for (field <- schema2.iterator) {
-  //     schema = updateSchema(schema, field)
-  //   }
-  //   schema
-  // }
 
   def getArrayType(
       t: Any,
@@ -369,29 +155,12 @@ object SchemaInference {
       }
 
     }
-
-    // if(_t1.isInstanceOf[ArrayType]) {
-    //   if(_t2.isInstanceOf[ArrayType]) {
-    //     val (_, newT) = reduceKey((k, _subT1), (k, _subT2))
-    //     return(k, (ArrayType(NullType), newT))
-    //   } else {
-    //     return (k, v1)
-    //   }
-    // } else if(_t2.isInstanceOf[ArrayType]) {
-    //   return (k, v2)
-    // } else {
-    //   val t1 = _t1.asInstanceOf[DataType]
-    //   val t2 = _t2.asInstanceOf[DataType]
-    //   return (k, (selectType(t1, t2), null))
-    // }
-    // }
-
     return schema
   }
 
   def selectType(t1: DataType, t2: DataType): DataType = {
     // only replaces NullType or selects the first type if conflict (e.g. one double and one string)
-    // when support for IntegerType is added conflict with DoubleType can be resolved
+    // when support for IntegerType is added conflict with DoubleType can be resolved (along with other type conflicts)
     if (t1 == t2 || t2 == NullType) {
       return t1
     } else if (t1 == NullType) {
@@ -409,11 +178,6 @@ object SchemaInference {
       val t1 = v1.asInstanceOf[HashMap[String, Any]]
       if (v2.isInstanceOf[HashMap[_, _]]) {
         val t2 = v2.asInstanceOf[HashMap[String, Any]]
-        // if(t1.size == 0)
-        // return (k, v2)
-        // else if(t2.size == 0)
-        // return (k, v1)
-        // else
         return (k, t1.merged(t2)(reduceKey))
       } else {
         return (k, v1)
@@ -453,17 +217,14 @@ object SchemaInference {
       Parser.getInputStream(partition.path)
     val end = if (partition.end == -1) { fileSize }
     else { partition.end }
-    // var reader = Parser.getBufferedReader(inputStream, jsonOptions.encoding, partition.start)
-    // var s = ""
-    // for (i <- 0 to 100) {
-    //   s += reader.read().toChar
-    // }
-    val reader = Parser.getBufferedReader(inputStream, jsonOptions.encoding, partition.start)
-    // println("START: " + s)
+    val reader = Parser.getBufferedReader(
+      inputStream,
+      jsonOptions.encoding,
+      partition.start
+    )
     dfa = jsonOptions.getDFA()
     var syntaxStackArray = Parser.initSyntaxStack(dfa, partition.startLevel)
     dfa.setState(partition.dfaState)
-    // println(dfa)
     val lastQueryToken = dfa.states.last.value
     var pos: Long = partition.start
     var found: Boolean = true
@@ -484,22 +245,14 @@ object SchemaInference {
         )
       found = _found
       count += 1
-      // println(_found, pos, end, syntaxStackArray, parsedRecords.size)
-      // println(value)
       if (value != null) {
-        // val (parsedRecord, _) = Parser.parse(value)
         val _value = if (value.isInstanceOf[HashMap[_, _]]) {
           value.asInstanceOf[HashMap[String, Any]]
         } else {
           new HashMap[String, Any] + (lastQueryToken -> value)
         }
-
-        // println(_value)
-        // println(_value)
         mergedMaps = mergedMaps.merged(_value)(reduceKey)
-        // println(mergedMaps)
 
-        // parsedRecords.append(_value)
         encounteredTokens =
           Parser.mergeMapSet(encounteredTokens, recordEncounteredTokens)
       }
@@ -509,26 +262,6 @@ object SchemaInference {
     println("RECORDS FOUND: " + count)
     reader.close()
     inputStream.close()
-
-    // reduce record schemas
-    // println(mergedMaps)
-    // infer schema from records
-    // var schema = new StructType()
-    //
-    // for ((recordType, subType) <- parsedRecords) {
-    //   if (recordType.isInstanceOf[HashMap[_, _]]) {
-    //     val newSchema = getStruct(record)
-    //     for (field <- newSchema.iterator) {
-    //       schema = updateSchema(schema, field)
-    //     }
-    //   } else {
-    //     val newField = getField(lastQueryToken, record)
-    //     schema = updateSchema(schema, newField)
-    //   }
-    // }
-
-    // println(partition.start)
-    // println(schema.json)
 
     return (mergedMaps, encounteredTokens, count)
   }
@@ -556,15 +289,11 @@ object SchemaInference {
         Parser.mergeMapSet(encounteredTokens, _encounteredTokens)
       i += 1
     }
-    // println("ENCOUNTERED TOKENS")
-    // println(encounteredTokens)
     jsonOptions.encounteredTokens = encounteredTokens
 
     val schema =
       mapToStruct(mergedMaps, nullToString = true, detectGeometry = false)
 
-    // println(schema)
-    // schema = nullToString(schema)
     encounteredTokens = getEncounteredTokens(jsonOptions, schema)
     jsonOptions.encounteredTokens = encounteredTokens
 

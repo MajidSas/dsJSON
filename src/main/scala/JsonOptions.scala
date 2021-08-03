@@ -9,7 +9,7 @@ class JsonOptions() extends Serializable {
   var pathGlobFilter = ""
   var recursive = "" 
   var partitioningStrategy = "speculation" // or "fullPass"
-  var schemaBuilder = "start" // "fullPass"
+  var schemaBuilder = "start" // or "fullPass"
   var encoding = "UTF-8"
   var encounteredTokens: HashMap[String, Set[(Int,Int)]] = _
   var filePaths : Seq[String] = _

@@ -32,15 +32,16 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
   var splitPath: String = "";
   
   def this(
-      _inputPartition: JsonInputPartition,
+      inputPartition: JsonInputPartition,
       schema: StructType,
       options: JsonOptions,
       filters: Array[Filter]) {
     this()
-    this.inputPartition = if(options.partitioningStrategy.equals("speculation")) {
-      println("Speculating.....")
-      Partitioning.speculate(_inputPartition, options)
-    } else {_inputPartition}
+    // this.inputPartition = if(options.partitioningStrategy.equals("speculation")) {
+    //   println("Speculating.....")
+    //   Partitioning.speculate(_inputPartition, options)
+    // } else {_inputPartition}
+    this.inputPartition = inputPartition
     this.schema = schema
     this.options = options
 
@@ -102,33 +103,17 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       dfa
     )
     pos = newPos
-    // val cc = if (value.length == 0) {
-    //   true
-    // } else {
-    //   false
-    // }
-
-    // false
-    // println(hasNext, value)
     count += 1
     if(hasNext == false || value == null) {
         println(hasNext + " start: " + start + " pos: " + pos + " end: " + end + " count: " + count)
-        // println(value)
+        println(value)
     }
     value = _value
-    // println(value)
-    // if(!value.equals("null")) {
-    //     println(value)
-    // }
-    // println("NEW " +  cc + value)
-    // cc
-    // println(hasNext)
     
     hasNext
   }
 
   def toInternalType(parsedRecord: Any, dataType: DataType, isRoot : Boolean = true): List[Any] = {
-    // println(parsedRecord, dataType)
     if (parsedRecord == null) {
       return List(null)
     }
@@ -188,73 +173,16 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
             return List(parsedRecord)
         }
 
-    // } else if (dataType.isInstanceOf[StructType]) {
-    //     val _dataType = dataType.asInstanceOf[StructType]
-    //     val r = parsedRecord.asInstanceOf[Map[String, Any]]
-    //     var l = List[Any]()
-    //     for(field <- _dataType.iterator) {
-    //         if(r contains field.name) {
-    //             l = l ++ toInternalType(r(field.name), field.dataType, false)
-    //         } else {
-    //             l = l ++ List(null)
-    //         }
-    //     }
-    //     if(isRoot) {
-    //         return l
-    //     } else {
-    //         return List(InternalRow.fromSeq(l))
-    //     }
-    // } else if (dataType.isInstanceOf[ArrayType]) {
-    //     val r = parsedRecord.asInstanceOf[List[Any]]
-    //     val elementType = dataType.asInstanceOf[ArrayType].elementType
-    //     var l = List[Any]()
-    //     for(e <- r.iterator) {
-    //         l = l ++ toInternalType(e, elementType, false)
-    //     }
-    //     return List(l)
-    // } else if (dataType.isInstanceOf[StringType]) {
-    //   return List(UTF8String.fromString(parsedRecord.asInstanceOf[String]))
-    // } else if(dataType.isInstanceOf[DoubleType] && parsedRecord.isInstanceOf[String]) {
-    //     println("################################")
-    //     println(parsedRecord, dataType)
-    //     return List(null)
-    //     // return List(parsedRecord)
-    // } else {
-    //     // if(parsedRecord.isInstanceOf[String]) {
-    //     //     parsedRecord
-    //     // }
-    //   return List(parsedRecord)
-    // }
   }
   def recordToRow(parsedRecord: Any, schema: StructType): InternalRow = {
-//     // var row = InternalRow()
-    // val _schema = if (schema.length == 1){
-    //     schema.apply(0).dataType
-    // } else {
-    //     schema
-    // }
-//     // println("recordToRow:..... " + InternalRow(toInternalType(parsedRecord)))
     val row = InternalRow.fromSeq(toInternalType(parsedRecord, schema))
-    // println(row)
-//     // }
-
-//     // if(parsedRecord != null) {
-//     //     println(pos + " " + row)
-//     // }
-
     row
   }
 
   override def get(): InternalRow = {
-    // val (parsedRecord, _) = Parser.parse(value)
-    // println(parsedRecord)
-    // println(parsedRecord)
+    // TODO parsed value will be array sorted based on schema
+    // there will be no need to do this conversion
     val row = recordToRow(value, schema)
-    // println("GOT THE ROW......." + row)
-    // println(row)
-    // println(parsedRecord)
-    // InternalRow(ArrayData.toArrayData(Array[Int](5)))
-    // InternalRow.empty
     row
   }
 
