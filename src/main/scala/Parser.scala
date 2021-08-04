@@ -619,6 +619,7 @@ object Parser {
           val (obj, newPos) = _parseObject(reader, encoding, pos, end, key, subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]])
           // map = map + ((key, obj))
           rowSequence(index) = obj
+          rowCounter += 1
           isKey = true
           pos = newPos
         }
@@ -637,6 +638,7 @@ object Parser {
             rowSequence(index) = arr
             pos = newPos
           }
+          rowCounter += 1
           isKey = true
 
         }
@@ -657,17 +659,19 @@ object Parser {
             } else {
               rowSequence(index) = null
             }
+          rowCounter += 1
             isKey = true
           }
         }
         case numRegExp() => {
           val (num, newPos) = _parseDouble(reader, encoding, pos, end, c)
           // map = map + ((key, num))
-          if(dataType.isInstanceOf[DoubleType]) {
+          if(dataType.isInstanceOf[StringType]) {
+              rowSequence(index) = UTF8String.fromString(num.toString())
+            } else {
             rowSequence(index) = num
-          } else {
-              rowSequence(index) = null
-            }
+          }
+          rowCounter += 1
           isKey = true
           pos = newPos
         }
@@ -675,20 +679,31 @@ object Parser {
           // map = map + ((key, null))
           // rowSequence(index)
           // already null by default
+          rowCounter += 1
           isKey = true
           pos = pos + stringSize("ull", encoding)
           reader.skip(3)
         }
         case 'f' => {
           // map = map + ((key, false))
+          rowCounter += 1
+          if(dataType.isInstanceOf[StringType]) {
+              rowSequence(index) = UTF8String.fromString("false")
+            } else {
           rowSequence(index) = false
+            }
           isKey = true
           pos = pos + stringSize("alse", encoding)
           reader.skip(4)
         }
         case 't' => {
           // map = map + ((key, true))
+          if(dataType.isInstanceOf[StringType]) {
+              rowSequence(index) = UTF8String.fromString("true")
+            } else {
           rowSequence(index) = true
+            }
+          rowCounter += 1
           isKey = true
           pos = pos + stringSize("rue", encoding)
           reader.skip(3)

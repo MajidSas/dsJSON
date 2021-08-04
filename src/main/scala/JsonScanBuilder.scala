@@ -22,8 +22,10 @@ class JsonScanBuilder(val schema : StructType, val options :  JsonOptions) exten
     if (dataType.isInstanceOf[StructType]) {
       val structType = dataType.asInstanceOf[StructType]
       for (field <- structType.iterator) {
+        // if(!field.dataType.isInstanceOf[NullType]) {
         rowMap += (field.name -> (index, field.dataType, schemaToRowMap(field.dataType)))
         index += 1
+        // }
       }
     } else if (dataType.isInstanceOf[ArrayType]) {
       return schemaToRowMap(dataType.asInstanceOf[ArrayType].elementType)

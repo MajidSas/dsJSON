@@ -55,7 +55,7 @@ object Main {
 
     df.createOrReplaceTempView("features")
     val sqlDF = spark.sql("SELECT *  FROM features")
-    sqlDF.show()
+    sqlDF.summary().show()
     // sqlDF.write.format("csv").save("productIds.csv")
   }
 }

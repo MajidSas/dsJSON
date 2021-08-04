@@ -107,83 +107,15 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
     count += 1
     if(hasNext == false || value == null) {
         println(hasNext + " start: " + start + " pos: " + pos + " end: " + end + " count: " + count)
-        println(value)
+        // println(value)
     }
     value = _value
     
     hasNext
   }
 
-  def toInternalType(parsedRecord: Any, dataType: DataType, isRoot : Boolean = true): List[Any] = {
-    if (parsedRecord == null) {
-      return List(null)
-    }
-
-    
-        if(dataType.isInstanceOf[StructType]) {
-            if(!parsedRecord.isInstanceOf[Map[_,_]]){
-                return List(null)
-            }
-            val structType = dataType.asInstanceOf[StructType]
-            val r = parsedRecord.asInstanceOf[Map[String, Any]]
-            var l = List[Any]()
-            for(field <- structType.iterator) {
-                if(r contains field.name) {
-                    l = l ++ toInternalType(r(field.name), field.dataType, false)
-                } else {
-                    l = l ++ List(null)
-                }
-            }
-            if(isRoot) {
-                return l
-            } else {
-                return List(InternalRow.fromSeq(l))
-            }
-        }
-        else if(dataType.isInstanceOf[ArrayType]) {
-            if(!parsedRecord.isInstanceOf[List[Any]]) {
-                return List(null)
-            }
-            val r = parsedRecord.asInstanceOf[List[Any]]
-            val elementType = dataType.asInstanceOf[ArrayType].elementType
-            var l = List[Any]()
-            for(e <- r.iterator) {
-                l = l ++ toInternalType(e, elementType, false)
-            }
-            return List(l)
-        }
-        else if(dataType.isInstanceOf[StringType]) {
-            if(!parsedRecord.isInstanceOf[String]) {
-                return List(null)
-            }
-            return List(UTF8String.fromString(parsedRecord.asInstanceOf[String]))
-        }
-        else if(dataType.isInstanceOf[DoubleType]) {
-            if(!parsedRecord.isInstanceOf[Double]) {
-                return List(null)
-            }
-            return List(parsedRecord)
-        }
-        else if(dataType.isInstanceOf[BooleanType]) {
-            if(!parsedRecord.isInstanceOf[Boolean]) {
-                return List(null)
-            }
-            return List(parsedRecord)
-        }
-        else {
-            return List(parsedRecord)
-        }
-
-  }
-  def recordToRow(parsedRecord: Any, schema: StructType): InternalRow = {
-    val row = InternalRow.fromSeq(toInternalType(parsedRecord, schema))
-    row
-  }
 
   override def get(): InternalRow = {
-    // TODO parsed value will be array sorted based on schema
-    // there will be no need to do this conversion
-    // val row = recordToRow(value, schema)
     value.asInstanceOf[InternalRow]
   }
 
