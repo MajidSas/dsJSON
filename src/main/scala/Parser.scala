@@ -10,7 +10,9 @@ import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.sql.types._
 import scala.collection.immutable.HashMap
 import java.lang.StringBuilder 
-
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.util.ArrayData
+import org.apache.spark.unsafe.types.UTF8String
 
 object Parser {
   def getInputStream(filename: String): (FSDataInputStream, Long) = {
@@ -217,7 +219,8 @@ object Parser {
       syntaxStackArray: ArrayBuffer[Char],
       dfa: DFA,
       getTokens: Boolean = false,
-      getTypes: Boolean = false
+      getTypes: Boolean = false,
+      rowMap: HashMap[String, (Int, DataType, Any)] = null
   ): (Boolean, Any, HashMap[String, Set[(Int, Int)]], Long) = {
 
     var encounteredTokens = HashMap[String, Set[(Int, Int)]]()
@@ -240,7 +243,7 @@ object Parser {
         val (value, _p) = if (getTypes) {
           parseType(reader, encoding, pos, end, c)
         } else {
-          _parse(reader, encoding, pos, end, c)
+          _parse(reader, encoding, pos, end, "", rowMap, c)
         }
         pos = _p
         return (true, value, encounteredTokens, pos)
@@ -277,13 +280,12 @@ object Parser {
         if (t == ':') {
           token = token.substring(1, token.size - 1)
           val dfaResponse = dfa.checkToken(token, syntaxStackArray.size)
-          // println(token, dfaResponse, dfa.currentState, syntaxStackArray)
           if (dfaResponse.equals("accept")) {
 
             val (value, _p) = if (getTypes) {
               parseType(reader, encoding, pos, end)
             } else {
-              _parse(reader, encoding, pos, end)
+              _parse(reader, encoding, pos, end, token, rowMap)
             }
             pos = _p
 
@@ -291,7 +293,7 @@ object Parser {
           } else if (dfaResponse.equals("reject")) {
 
             if (getTokens) {
-              val (parsedValue, _p) = _parse(reader, encoding, pos, end)
+              val (parsedValue, _p) = parseType(reader, encoding, pos, end)
               pos = _p
               encounteredTokens = addToken(
                 encounteredTokens,
@@ -509,7 +511,9 @@ object Parser {
       encoding: String,
       _pos: Long,
       end: Long,
-      currentChar: Char = '\u0000'
+      key: String,
+      rowMap : HashMap[String, (Int, DataType, Any)],
+      currentChar: Char = '\u0000',
   ): (Any, Long) = {
     var pos: Long = _pos
 
@@ -524,41 +528,54 @@ object Parser {
     } else {
       c = currentChar;
     }
+    
+    val (_, dataType, subType) : (_, DataType, Any) = if (key.equals("")) { (-1, NullType, null) } else { rowMap(key) }
+
+
     while (true) {
       c match {
         case '{' => {
-          val (obj, newPos) = _parseObject(reader, encoding, pos, end, "")
+          val (obj, newPos) = _parseObject(reader, encoding, pos, end, "", rowMap)
           return (obj, newPos)
         }
         case '[' => {
-          val (arr, newPos) = _parseArray(reader, encoding, pos, end, "")
-          return (arr, newPos)
+          val (arr, newPos) = _parseArray(reader, encoding, pos, end, "", subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]])
+          return (InternalRow.fromSeq(Seq(arr)), newPos)
         }
         case '"' => {
           val (str, newPos) = consume(reader, encoding, pos, end, c)
-          return (str.substring(1, str.length - 1), newPos)
+          if(dataType.isInstanceOf[StringType]){
+          return (InternalRow.fromSeq(Seq(UTF8String.fromString(str.substring(1, str.length - 1)))), newPos)
+           } else{
+            return (InternalRow.fromSeq(Seq(null)), newPos)
+           }
         }
         case 'n' => {
           reader.skip(3)
-          return (null, pos + stringSize("ull", encoding))
+          return (InternalRow.fromSeq(Seq(null)), pos + stringSize("ull", encoding))
         }
         case 'f' => {
           reader.skip(4)
-          return (false, pos + stringSize("alse", encoding))
+          return (InternalRow.fromSeq(Seq(false)), pos + stringSize("alse", encoding))
         }
         case 't' => {
           reader.skip(3)
-          return (true, pos + stringSize("rue", encoding))
+          return (InternalRow.fromSeq(Seq(true)), pos + stringSize("rue", encoding))
         }
         case numRegExp() => {
           val (num, newPos) = _parseDouble(reader, encoding, pos, end, c)
-          return (num, newPos)
+          if(dataType.isInstanceOf[DoubleType]){
+          return (InternalRow.fromSeq(Seq(num)), newPos)
+          } else{
+            return (InternalRow.fromSeq(Seq(null)), newPos)
+           }
         }
         case _ => {} // these are skipped (e.g. whitespace)
       }
 
       val i = reader.read()
       if (i == -1) {
+        // return (InternalRow.fromSeq(Seq(null)), pos) // should
         return (null, pos)
       }
       c = i.toChar
@@ -572,25 +589,36 @@ object Parser {
       encoding: String,
       _pos: Long,
       end: Long,
-      parentKey: String
-  ): (HashMap[String, Any], Long) = {
+      parentKey: String,
+      rowMap : HashMap[String, (Int, DataType, Any)],
+  ): (InternalRow, Long) = {
     // TODO add filtering and projection
-    var map = HashMap[String, Any]()
+    // var map = HashMap[String, Any]()
+    val rowSequence = new Array[Any](rowMap.size)
+    var rowCounter = 0
     var isKey = true
     var key = ""
+    var skipRow = false
 
     var pos: Long = _pos
     while (true) { // parse until full object or end of file
+      if(rowCounter == rowMap.size || skipRow) {
+        pos = skip(reader, encoding, pos, end, '{')
+        return (InternalRow.fromSeq(rowSequence.toSeq), pos)
+      }
       val i = reader.read()
       if (i == -1) {
         return (null, pos) // maybe raise an exception since object is not fully parsed
       }
       val c = i.toChar
       pos += charSize(i)
+
+      val (index, dataType, subType) : (Int, DataType, Any) = if(!isKey) { rowMap(key) } else { (-1, NullType, null) }
       c match {
         case '{' => {
-          val (obj, newPos) = _parseObject(reader, encoding, pos, end, key)
-          map = map + ((key, obj))
+          val (obj, newPos) = _parseObject(reader, encoding, pos, end, key, subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]])
+          // map = map + ((key, obj))
+          rowSequence(index) = obj
           isKey = true
           pos = newPos
         }
@@ -601,12 +629,12 @@ object Parser {
           ) {
             val (coordinates, newPos) =
               consume(reader, encoding, pos, end, c)
-            map =
-              map + ((key, coordinates.substring(1, coordinates.length - 1)))
+            rowSequence(index)  = coordinates.substring(1, coordinates.length - 1)
             pos = newPos
           } else {
-            val (arr, newPos) = _parseArray(reader, encoding, pos, end, key)
-            map = map + ((key, arr))
+            val (arr, newPos) = _parseArray(reader, encoding, pos, end, key, subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]])
+            // map = map + ((key, arr))
+            rowSequence(index) = arr
             pos = newPos
           }
           isKey = true
@@ -614,41 +642,59 @@ object Parser {
         }
         case '"' => {
           val (str, newPos) = consume(reader, encoding, pos, end, c)
+          pos = newPos
+
           if (isKey) {
             key = str.substring(1, str.length - 1)
-            isKey = false
+            if(rowMap contains key) {
+              isKey = false
+            } else {
+              pos = skip(reader, encoding, pos, end)
+            }
           } else {
-            map = map + ((key, str.substring(1, str.length - 1)))
+            if(dataType.isInstanceOf[StringType]) {
+              rowSequence(index) = UTF8String.fromString(str.substring(1, str.length - 1))
+            } else {
+              rowSequence(index) = null
+            }
             isKey = true
           }
-          pos = newPos
         }
         case numRegExp() => {
           val (num, newPos) = _parseDouble(reader, encoding, pos, end, c)
-          map = map + ((key, num))
+          // map = map + ((key, num))
+          if(dataType.isInstanceOf[DoubleType]) {
+            rowSequence(index) = num
+          } else {
+              rowSequence(index) = null
+            }
           isKey = true
           pos = newPos
         }
         case 'n' => {
-          map = map + ((key, null))
+          // map = map + ((key, null))
+          // rowSequence(index)
+          // already null by default
           isKey = true
           pos = pos + stringSize("ull", encoding)
           reader.skip(3)
         }
         case 'f' => {
-          map = map + ((key, false))
+          // map = map + ((key, false))
+          rowSequence(index) = false
           isKey = true
           pos = pos + stringSize("alse", encoding)
           reader.skip(4)
         }
         case 't' => {
-          map = map + ((key, true))
+          // map = map + ((key, true))
+          rowSequence(index) = true
           isKey = true
           pos = pos + stringSize("rue", encoding)
           reader.skip(3)
         }
         case '}' => {
-          return (map, pos)
+          return (InternalRow.fromSeq(rowSequence.toSeq), pos)
         }
         case _ => {} // skip character
       }
@@ -665,8 +711,9 @@ object Parser {
       encoding: String,
       _pos: Long,
       end: Long,
-      parentKey: String
-  ): (List[Any], Long) = {
+      parentKey: String,
+      rowMap : HashMap[String, (Int, DataType, Any)]
+  ): (ArrayData, Long) = {
     var arr = new ArrayBuffer[Any]()
     var pos: Long = _pos
 
@@ -681,20 +728,20 @@ object Parser {
       c match {
         case '{' => {
           val (obj, newPos) =
-            _parseObject(reader, encoding, pos, end, parentKey)
+            _parseObject(reader, encoding, pos, end, parentKey, rowMap)
           arr.append(obj)
           pos = newPos
         }
         case '[' => {
 
           val (_arr, newPos) =
-            _parseArray(reader, encoding, pos, end, parentKey)
+            _parseArray(reader, encoding, pos, end, parentKey, rowMap)
           arr.append(_arr)
           pos = newPos
         }
         case '"' => {
           val (str, newPos) = consume(reader, encoding, pos, end, c)
-          arr.append(str.substring(1, str.length - 1))
+          arr.append(UTF8String.fromString(str.substring(1, str.length - 1)))
           pos = newPos
         }
         case numRegExp() => {
@@ -718,7 +765,7 @@ object Parser {
           reader.skip(3)
         }
         case ']' => {
-          return (arr.toList, pos)
+          return (ArrayData.toArrayData(arr), pos)
         }
         case _ => {} // skip character
       }

@@ -3,6 +3,8 @@ package edu.ucr.cs.bdlab
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.connector.read.InputPartition
 import scala.collection.immutable.HashMap
+import org.apache.spark.sql.types.DataType
+
 class JsonOptions() extends Serializable {
   var filepath = "" // could be a file, a directory, or a GlobPattern
   var jsonpath = "" // JSONPath query string
@@ -14,6 +16,7 @@ class JsonOptions() extends Serializable {
   var encounteredTokens: HashMap[String, Set[(Int,Int)]] = _
   var filePaths : Seq[String] = _
   var partitions : Array[InputPartition] = _
+  var rowMap: HashMap[String, (Int, DataType, Any)] = _
   def init(options : CaseInsensitiveStringMap) {
     this.filepath = options.get("path")
     this.jsonpath = options.get("jsonpath")

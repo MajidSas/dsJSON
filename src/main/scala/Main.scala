@@ -47,15 +47,15 @@ object Main {
     )
 
     df.printSchema()
-    println(
-      "###########################\n\n\nFOUND RECORDS: " +
-      df.count().toString() + "\n\n\n###########################"
-    )
+    // println(
+    //   "###########################\n\n\nFOUND RECORDS: " +
+    //   df.count().toString() + "\n\n\n###########################"
+    // )
     // df.summary().show()
 
-    // df.createOrReplaceTempView("products")
-    // val sqlDF = spark.sql("SELECT productId  FROM products")
-    // sqlDF.show()
+    df.createOrReplaceTempView("features")
+    val sqlDF = spark.sql("SELECT *  FROM features")
+    sqlDF.show()
     // sqlDF.write.format("csv").save("productIds.csv")
   }
 }

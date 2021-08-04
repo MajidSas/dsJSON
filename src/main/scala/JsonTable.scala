@@ -11,6 +11,7 @@ import java.util.HashSet
 class JsonTable(val _schema: StructType, val jsonOptions: JsonOptions)
     extends SupportsRead {
 
+  
   override def newScanBuilder(
       options: CaseInsensitiveStringMap
   ): ScanBuilder = {
@@ -20,20 +21,20 @@ class JsonTable(val _schema: StructType, val jsonOptions: JsonOptions)
       _jsonOptions.init(options)
     }
 
-    if(_jsonOptions.filePaths == null) {
+    if (_jsonOptions.filePaths == null) {
       _jsonOptions.filePaths = Partitioning.getFilePaths(_jsonOptions)
     }
+
     // do partitioning here and serialize for later use
     // createPartitions in JsonBatch is called twice by Spark for some reason
-   
+
     if (_jsonOptions.partitions == null) {
-        println("Creating partitions with a full pass...")
-        _jsonOptions.partitions = Partitioning.fullPass(_jsonOptions)
-    }  else if(_jsonOptions.partitioningStrategy.equals("speculation")) {
-        println("Creating partitions with speculation...")
-        _jsonOptions.partitions =
-          Partitioning.speculation(_jsonOptions)
-      }
+      println("Creating partitions with a full pass...")
+      _jsonOptions.partitions = Partitioning.fullPass(_jsonOptions)
+    } else if (_jsonOptions.partitioningStrategy.equals("speculation")) {
+      println("Creating partitions with speculation...")
+      _jsonOptions.partitions = Partitioning.speculation(_jsonOptions)
+    }
 
     return new JsonScanBuilder(_schema, _jsonOptions)
   }

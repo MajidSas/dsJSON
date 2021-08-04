@@ -100,7 +100,8 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       end,
       pos,
       syntaxStackArray,
-      dfa
+      dfa,
+      rowMap = options.rowMap
     )
     pos = newPos
     count += 1
@@ -182,8 +183,8 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
   override def get(): InternalRow = {
     // TODO parsed value will be array sorted based on schema
     // there will be no need to do this conversion
-    val row = recordToRow(value, schema)
-    row
+    // val row = recordToRow(value, schema)
+    value.asInstanceOf[InternalRow]
   }
 
   override def close() {
