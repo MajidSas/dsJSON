@@ -12,6 +12,8 @@ import org.apache.spark.sql.catalyst.util._
 import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.sources.Filter
+import scala.collection.immutable.HashMap
+
 
 class JsonPartitionReader extends PartitionReader[InternalRow] {
   var inputPartition: JsonInputPartition = null
@@ -30,12 +32,12 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
   var syntaxStackArray: ArrayBuffer[Char] = ArrayBuffer[Char]()
   var stateLevel = 0;
   var splitPath: String = "";
-  
+  var filterVariables : HashMap[String, Variable] = null
+  var filterSize : Int = 0
   def this(
       inputPartition: JsonInputPartition,
       schema: StructType,
-      options: JsonOptions,
-      filters: Array[Filter]) {
+      options: JsonOptions) {
     this()
     // this.inputPartition = if(options.partitioningStrategy.equals("speculation")) {
     //   println("Speculating.....")
@@ -62,7 +64,10 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       inputPartition.dfaState
       // inputPartition.startLabel
     )
-
+    println("Filters: "+options.filterString)
+    val (_, _filterVariables, _filterSize) : (Any, HashMap[String, Variable], Int) =  FilterProcessor.parseExpr(options.filterString, options.rowMap)
+    filterVariables = _filterVariables
+    filterSize = _filterSize
     // println(options.encounteredTokens)
 
     syntaxStackArray = Parser.initSyntaxStack(dfa, startLevel)
@@ -101,7 +106,9 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       pos,
       syntaxStackArray,
       dfa,
-      rowMap = options.rowMap
+      rowMap = options.rowMap,
+      filterVariables = filterVariables,
+      filterSize = filterSize,
     )
     pos = newPos
     count += 1

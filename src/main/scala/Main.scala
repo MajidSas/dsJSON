@@ -10,7 +10,7 @@ import org.apache.spark.sql.DataFrame
 
 object Main {
   def main(args: Array[String]): Unit = {
-    val (input, jsonPath, partitioningStrategy) = (args(0), args(1), args(2))
+    val (input, jsonPath, partitioningStrategy, sqlFilter) = (args(0), args(1), args(2), args(3))
     val conf = new SparkConf()
 //      .setMaster(server)
       .set("spark.sql.files.maxPartitionBytes", "134217728") // 128MB
@@ -53,9 +53,9 @@ object Main {
     // )
     // df.summary().show()
 
-    df.createOrReplaceTempView("features")
-    val sqlDF = spark.sql("SELECT *  FROM features")
-    sqlDF.summary().show()
+    df.createOrReplaceTempView("table")
+    val sqlDF = spark.sql("SELECT *  FROM table WHERE " + sqlFilter)
+    sqlDF.show()
     // sqlDF.write.format("csv").save("productIds.csv")
   }
 }

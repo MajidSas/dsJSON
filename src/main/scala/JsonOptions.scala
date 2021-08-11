@@ -8,6 +8,7 @@ import org.apache.spark.sql.types.DataType
 class JsonOptions() extends Serializable {
   var filepath = "" // could be a file, a directory, or a GlobPattern
   var jsonpath = "" // JSONPath query string
+  var filterString = "" // filters extracted from jsonPath and SQL query
   var pathGlobFilter = ""
   var recursive = "" 
   var partitioningStrategy = "speculation" // or "fullPass"
@@ -32,8 +33,31 @@ class JsonOptions() extends Serializable {
       this.encoding = options.get("encoding")
   }
   def getDFA(): DFA = {
-    val pathTokens = PathProcessor.build(this.jsonpath);
-    return new DFA(pathTokens);;
+    val (pathTokens, pathFilters) = PathProcessor.build(this.jsonpath);
+    println("getDFA: " + pathTokens)
+    var dfa = new DFA(pathTokens)
+    println(pathTokens, pathFilters, dfa)
+
+    if(filterString == "") {
+      filterString = if(dfa.states.last.stateType == "array" && pathFilters.size > 0) {
+        "(" + pathFilters.last + ")" } else { "" }
+    } 
+    return dfa
+  }
+
+  def setFilter(sqlFilter : String) = {
+    val (pathTokens, pathFilters) = PathProcessor.build(this.jsonpath);
+    var dfa = new DFA(pathTokens)
+    filterString = if(dfa.states.last.stateType == "array" && pathFilters.size > 0) {
+      "(" + pathFilters.last + ")"
+    } else { "" }
+    if(filterString != "") {
+      filterString += " && "
+    }
+
+    filterString += "(" + sqlFilter + ")"
+
+    println("filterString: " + filterString)
   }
 
 }

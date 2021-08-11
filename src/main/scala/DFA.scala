@@ -31,19 +31,19 @@ class DFA() {
     while (i < pathTokens.length) {
       var token = pathTokens(i)
       if(token.equals("[")) {
-        val skip = pathTokens(i+1).toInt
-        var accept = 1
-        if(pathTokens(i+2).equals("*")){
-          accept = -1
-        } else {
-          accept = pathTokens(i+2).toInt - skip
-        }
-        this.states.append(new State("array", ",", skip, accept))
-        i=i+3 // skip array indexing <> TODO parse filters if any
+        // val skip = pathTokens(i+1).toInt
+        // var accept = 1
+        // if(pathTokens(i+2).equals("*")){
+        //   accept = -1
+        // } else {
+        //   accept = pathTokens(i+2).toInt - skip
+        // }
+        this.states.append(new State("array", ",", 0, 1))
+        i+=1 // skip array indexing <> TODO parse filters if any
       } else {
         this.states.append(new State("token", token.toString, 0 , 1))
         this.tokens.append((token.toString, states.size))
-        i=i+1
+        i+=1
       }
     }
   }

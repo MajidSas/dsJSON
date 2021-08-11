@@ -17,11 +17,10 @@ import org.apache.spark.sql.sources.Filter
 class JsonBatch(
     val schema: StructType,
     val options: JsonOptions,
-    val filters: Array[Filter]
 ) extends Batch {
 
   override def createReaderFactory(): PartitionReaderFactory = {
-    return new JsonPartitionReaderFactory(schema, options, filters);
+    return new JsonPartitionReaderFactory(schema, options);
   }
 
   override def planInputPartitions(): Array[InputPartition] = {

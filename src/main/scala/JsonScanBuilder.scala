@@ -22,25 +22,32 @@ class JsonScanBuilder(val schema : StructType, val options :  JsonOptions) exten
     if (dataType.isInstanceOf[StructType]) {
       val structType = dataType.asInstanceOf[StructType]
       for (field <- structType.iterator) {
-        // if(!field.dataType.isInstanceOf[NullType]) {
         rowMap += (field.name -> (index, field.dataType, schemaToRowMap(field.dataType)))
         index += 1
-        // }
       }
     } else if (dataType.isInstanceOf[ArrayType]) {
       return schemaToRowMap(dataType.asInstanceOf[ArrayType].elementType)
     } else {
       return null
     }
-
     return rowMap
   }
     override def build(): Scan = {
-        // println(SparkSession.builder.getOrCreate().sessionState.conf.getAllConfs)
-        // println(SparkSession.builder.getOrCreate().sessionState.conf.jsonFilterPushDown)
         options.rowMap = schemaToRowMap(_requiredSchema)
-        println(options.rowMap)
-        return new JsonScan(_requiredSchema, options, _pushedFilters)
+        var filterString = ""
+        var i = 0
+        for(f <- _pushedFilters) {
+          filterString += "(" + FilterProcessor.sparkFilterToJsonFilter(f.toString(), options.rowMap) + ")"
+          i += 1
+          if(i < _pushedFilters.size) {
+            filterString += " && "
+          }
+        }
+
+        // TODO update rowMap to contain keys not in required schema
+        
+        options.setFilter(filterString)
+        return new JsonScan(_requiredSchema, options)
     }
 
 
@@ -49,7 +56,7 @@ class JsonScanBuilder(val schema : StructType, val options :  JsonOptions) exten
     if (SparkSession.builder.getOrCreate().sessionState.conf.jsonFilterPushDown) {
       _pushedFilters = StructFilters.pushedFilters(filters, schema)
       println("FILTERS")
-      println(_pushedFilters)
+      _pushedFilters.map(f => println(f.toString))
     }
     filters
   }
@@ -60,7 +67,6 @@ class JsonScanBuilder(val schema : StructType, val options :  JsonOptions) exten
     println("REQUIRED SCHEMA")
     println(requiredSchema)
     _requiredSchema = requiredSchema
-    // requiredSchema
   }
 
 }
