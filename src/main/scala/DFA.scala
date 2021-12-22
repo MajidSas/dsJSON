@@ -1,16 +1,36 @@
+/*
+ * Copyright 2020 University of California, Riverside
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package edu.ucr.cs.bdlab
 
 
 class State(val stateType: String,
             val value: String,
             var skip: Int, // for array indexing (not used)
-            var accept: Int)
+            var accept: Int
+            // TODO: add value for the size of stack prior to moving to this state
+            //       and modify toNextState accordingly
+          )
 {
 
   override def toString : String = {
     if(stateType.equals("array")) {
       return "State type: array"
     }
+
     "State type: %s, Value: %s".format(
       stateType,
       value
@@ -31,15 +51,11 @@ class DFA() {
     while (i < pathTokens.length) {
       var token = pathTokens(i)
       if(token.equals("[")) {
-        // val skip = pathTokens(i+1).toInt
-        // var accept = 1
-        // if(pathTokens(i+2).equals("*")){
-        //   accept = -1
-        // } else {
-        //   accept = pathTokens(i+2).toInt - skip
-        // }
         this.states.append(new State("array", ",", 0, 1))
-        i+=1 // skip array indexing <> TODO parse filters if any
+        i+=1
+      } else if(token.equals("..")) {
+        this.states.append(new State("descendant", pathTokens(i+1), 0, 1))
+        i+=2
       } else {
         this.states.append(new State("token", token.toString, 0 , 1))
         this.tokens.append((token.toString, states.size))
@@ -87,22 +103,44 @@ class DFA() {
     return false
   }
   def toPrevState() {
-    currentState = currentState-1
+    // if(states(currentState).stateType.equals("descendant")) {
+    //   if(currentState+1 == level) {
+    //     currentState = currentState-1
+    //   }
+    // }
+    // else {
+      currentState = currentState-1
+    // }
   }
   def getCurrentState() : Int = {
     currentState
   }
 
   def checkToken(input : String, level : Int) : String = {
-    if(level == currentState+1 && input.equals(states(currentState).value)){
-      toNextState()
-      if(currentState == states.size) {
-        return "accept"
-      } else {
-        return "continue"
+    // println((input, level, states(currentState).stateType.equals("descendant"), 
+    // input.equals(states(currentState).value), 
+    // currentState == states.size))
+    if(states(currentState).stateType.equals("descendant")) {
+      if(level >= currentState+1 && input.equals(states(currentState).value)) {
+        toNextState()
+        if(currentState == states.size) {
+          currentState -= 1
+          return "accept"
+        }
       }
+      return "continue"
+    } else {
+      if(level == currentState+1 && input.equals(states(currentState).value)){
+        toNextState()
+        if(currentState == states.size) {
+          currentState -= 1
+          return "accept"
+        } else {
+          return "continue"
+        }
+      }
+      return "reject"
     }
-    return "reject"
   }
 
   def checkArray() : String = {

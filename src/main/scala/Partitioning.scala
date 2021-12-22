@@ -1,3 +1,19 @@
+/*
+ * Copyright 2020 University of California, Riverside
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package edu.ucr.cs.bdlab
 
 import org.apache.hadoop.fs.GlobFilter
@@ -9,9 +25,9 @@ import org.apache.hadoop.fs.PathFilter
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.types._
-import org.apache.spark.beast.sql.GeometryUDT
 import scala.util.Try
 import scala.collection.immutable.HashSet
+import scala.collection.immutable.HashMap
 
 object Partitioning {
 
@@ -27,13 +43,13 @@ object Partitioning {
     val isDirectory = if (hasWildcard) { false }
     else { fs.getFileStatus(new Path(options.filepath)).isDirectory }
 
-    println("Searching for matching files in path:")
+    // println("Searching for matching files in path:")
     if (hasWildcard) {
       val statues = fs.globStatus(new Path(options.filepath), filter)
       for (fileStatus <- statues) {
         val path = fileStatus.getPath().toString()
         filePaths.append(path)
-        println(path)
+        // println(path)
       }
     } else if (isDirectory) {
       val iterator =
@@ -43,12 +59,12 @@ object Partitioning {
         val path = status.getPath()
         if (status.isFile && (filter == null || filter.accept(path))) {
           filePaths.append(path.toString)
-          println(path)
+          // println(path)
         }
       }
     } else {
       filePaths.append(options.filepath)
-      println(options.filepath)
+      // println(options.filepath)
     }
 
     if (filePaths.length == 0)
@@ -57,24 +73,41 @@ object Partitioning {
     return filePaths.toSeq
   }
 
-  def getFilePartitions(filePaths: Seq[String]): ArrayBuffer[InputPartition] = {
+  def getFilePartitions(
+      filePaths: Seq[String],
+      options: JsonOptions
+  ): ArrayBuffer[InputPartition] = {
     var partitions: ArrayBuffer[InputPartition] =
       new ArrayBuffer[InputPartition]()
-    val sparkBucketSize = SparkContext
+    val conf = SparkContext
       .getOrCreate()
       .getConf
-      .getOption("spark.sql.files.maxPartitionBytes")
-      .get
-      .toLong
 
+    // This function attempts to create a number of partitions equal to
+    // the available executers within the set size limits. 
+    val sparkExecuters = conf.getInt("spark.default.parallelism", 8)
+    println("Executers: " + sparkExecuters)
+    val sparkMinBucketSize = conf.getLong("spark.sql.files.minPartitionBytes", 33554432)
+    println("MinBucketSize: " + sparkMinBucketSize)
+    val sparkMaxBucketSize = conf.getLong("spark.sql.files.maxPartitionBytes", 1073741824)
+    println("MaxBucketSize: " + sparkMaxBucketSize)
+
+    var totalSize = 0L
     for (path <- filePaths) {
-      println("Partitioning " + path)
-      val (inputStream, fileSize) = Parser.getInputStream(path)
-      val bucketSize = sparkBucketSize.min(fileSize)
+      val (_, fileSize) = Parser.getInputStream(path, options.hdfsPath)
+      totalSize += fileSize
+    }
+    val bucketSize = ((1.0*totalSize/sparkExecuters).ceil.toLong)
+                        .min(sparkMaxBucketSize) // shouldn't be more than this
+                        .max(sparkMinBucketSize) // shouldn't be less than this
+    println("BucketSize: " + bucketSize)
+    for (path <- filePaths) {
+      val (inputStream, fileSize) =
+        Parser.getInputStream(path, options.hdfsPath)
       val nPartitions = (1.0 * fileSize / bucketSize).ceil.toInt
 
       var startIndex = 0L;
-      var endIndex = bucketSize;
+      var endIndex = bucketSize.min(fileSize);
       for (i <- 0 to nPartitions - 1) {
         partitions.append(
           new JsonInputPartition(
@@ -85,8 +118,6 @@ object Partitioning {
             0
           )
         )
-        println(i + "-> start: " + startIndex + " endIndex: " + endIndex)
-
         startIndex = endIndex
         endIndex = (startIndex + bucketSize).min(fileSize)
       }
@@ -106,8 +137,9 @@ object Partitioning {
     var startLevel = 0
     var startState = 0
     var startToken = ""
-    var tokenLevels = options.encounteredTokens
-    val (inputStream, fileSize) = Parser.getInputStream(partition.path)
+    var speculationKeys = options.speculationKeys
+    val (inputStream, fileSize) =
+      Parser.getInputStream(partition.path, options.hdfsPath)
     var dfa = options.getDFA()
     val maxQueryLevel = dfa.states.length
 
@@ -129,17 +161,22 @@ object Partitioning {
             shiftedEndIndex
           )
         val (tmpToken, index) =
-          Parser.getNextToken(bufferedReader, options.encoding, fileSize)
+          Parser.getNextToken(
+            bufferedReader,
+            options.encoding,
+            partition.start,
+            partition.end
+          )
         if (
-          (tokenLevels contains tmpToken) && tokenLevels(tmpToken).size == 1
+          (speculationKeys contains tmpToken)
         ) {
           foundToken = true
           token = tmpToken
-          val (__level, __state) = tokenLevels(token).toSeq(0)
-          partitionLevel = __level
-          partitionState = __state
+          partitionLevel = speculationKeys(token)._1
+          partitionState = speculationKeys(token)._2
           partitionLabel = token
           if (partitionLevel > partitionState) {
+
             shiftedEndIndex = shiftedEndIndex + Parser.skipLevels(
               bufferedReader,
               options.encoding,
@@ -172,10 +209,11 @@ object Partitioning {
 
       if (startState > 0 && startState == startLevel && !skippedLevels) {
         startState -= 1
-        
+
       }
 
     }
+
     return new JsonInputPartition(
       partition.path,
       start,
@@ -188,14 +226,48 @@ object Partitioning {
   def speculation(options: JsonOptions): Array[InputPartition] = {
     val filePaths: Seq[String] = getFilePaths(options)
 
-    val tokenLevels = options.encounteredTokens
+    val tokenLevelsSorted = options.encounteredTokens
+      .filter(x => x._2.size == 1)
+      .map(f => (f._1, f._2.head))
+      .toSeq
+      .sortBy { case (k, (a, b, c)) => (c, a, b) }
+      .reverse
+    val maxOccurrence = tokenLevelsSorted(0)._2._3
+    var speculationKeys = new HashMap[String, (Int, Int, Int)]
+    tokenLevelsSorted
+      .filter(x => x._2._3 >= 1000)
+      .foreach(x => {
+      speculationKeys = speculationKeys + (x._1 -> x._2)
+      })
+    if (speculationKeys.size < 10 && tokenLevelsSorted.size >= 10) {
+      speculationKeys = new HashMap[String, (Int, Int, Int)]
+      for (i <- 0 to 10) {
+        speculationKeys =
+          speculationKeys + (tokenLevelsSorted(i)._1 -> tokenLevelsSorted(i)._2)
+      }
+    }
+    println(
+      "\n\n\n\n\n#################KEYS AVAILABLE FOR SPECULATION#############"
+    )
+    println("KEY,LEVEL,DFA STATE,#ENCOUNTERED")
+    speculationKeys.map({ case (k, v) =>
+      println(k + "," + v._1 + "," + v._2 + "," + v._3)
+    })
+    println("##########################################\n\n\n\n\n")
+    if(speculationKeys.size == 0) {
+      throw new RuntimeException("Not possible to speculate. There are no keys that occurred in only one level.")
+    }
+    options.speculationKeys = speculationKeys
+
     val partitions = options.partitions
 
     val sc = SparkContext.getOrCreate()
-    val x = sc.parallelize(partitions)
+    val x = sc.makeRDD(partitions.map(p => (p, p.preferredLocations())))
+
     val y = x.map(partition =>
-      speculate(partition.asInstanceOf[JsonInputPartition], options)
+      speculate(partition._1.asInstanceOf[JsonInputPartition], options)
     )
+
     val z = y.collect()
     var q: ArrayBuffer[InputPartition] = new ArrayBuffer[InputPartition]()
     var i = z.length - 1
@@ -205,7 +277,6 @@ object Partitioning {
       val partition = z(i).asInstanceOf[JsonInputPartition]
       val end = if (partition.path.equals(prevPath)) { prevStart }
       else { partition.end }
-      println(partition.start, end, partition.startLevel, partition.dfaState)
       q.append(
         new JsonInputPartition(
           partition.path,
@@ -221,101 +292,6 @@ object Partitioning {
     }
 
     q.toArray.reverse
-    // q.toArray.reverse
-
-    // println(z(0).asInstanceOf[JsonInputPartition].startLabel)
-
-    // for (path <- filePaths) {
-    //   println("Partitioning " + path)
-    //   val (inputStream, fileSize) = Parser.getInputStream(path)
-    //   val bucketSize = sparkBucketSize.min(fileSize)
-    //   val nPartitions = (1.0 * fileSize / bucketSize).ceil.toInt
-    //   dfa = options.getDFA()
-
-    //   // var countPartitions = 0
-    //   var startIndex = 0L;
-    //   var endIndex = bucketSize;
-    //   var partitionLevel = 0
-    //   var skippedLevels = false
-    //   var partitionLabel = ""
-    //   var i = 0
-    //   for (i <- 0 to nPartitions - 1) {
-    //     var shiftedEndIndex = endIndex
-    //     var token = ""
-    //     var nextPartitionLevel = maxQueryLevel
-    //     var nextPartitionLabel = ""
-    //     if (i < nPartitions - 1) {
-    //       // println(i, "Partition token index", token, index)
-    //       var foundToken = false
-    //       while (!foundToken && shiftedEndIndex < fileSize) {
-    //         val bufferedReader =
-    //           Parser.getBufferedReader(inputStream, shiftedEndIndex)
-    //         val (tmpToken, index) =
-    //           Parser.getNextToken(bufferedReader, fileSize)
-    //         if (
-    //           (tokenLevels contains tmpToken) && tokenLevels(tmpToken).size == 1
-    //         ) {
-    //           foundToken = true
-    //           token = tmpToken
-    //           nextPartitionLevel = tokenLevels(token).toSeq(0)
-    //           nextPartitionLabel = token
-    //           // println(token, tokenLevel, shiftedEndIndex, index)
-    //           if (nextPartitionLevel > maxQueryLevel) {
-    //             shiftedEndIndex = shiftedEndIndex + Parser.skipLevels(
-    //               bufferedReader,
-    //               nextPartitionLevel - maxQueryLevel,
-    //               fileSize
-    //             )
-    //             nextPartitionLevel = maxQueryLevel
-    //             skippedLevels = true
-    //           }
-    //         }
-    //         if (index == -1) {
-    //           shiftedEndIndex = fileSize
-    //         } else {
-    //           shiftedEndIndex += index + token.length + 2 //+ tmpToken.length + 2
-    //         }
-
-    //       }
-
-    //       // if(nextPartitionLevel == maxQueryLevel &&
-    //       // dfa.states.last.value.equals(nextPartitionLabel)) {
-    //       //     shiftedEndIndex = shiftedEndIndex - (nextPartitionLabel.length + 2)
-    //       // }
-
-    //       // println(
-    //       //   (foundToken, token, endIndex, shiftedEndIndex, tokenLevels(token)),
-    //       //   tokenLevel
-    //       // )
-    //     }
-    //     //   println(i, startIndex, shiftedEndIndex, token, tokenLevel, nextPartitionLabel, nextPartitionLevel)
-    //     if (!skippedLevels) {
-    //       shiftedEndIndex -= (nextPartitionLabel.length() + 2)
-    //     }
-    //     if (startIndex < fileSize) {
-    //       partitions.append(
-    //         new JsonInputPartition(
-    //           path,
-    //           startIndex,
-    //           shiftedEndIndex,
-    //           partitionLevel,
-    //           partitionLabel
-    //         )
-    //       )
-
-    //       println(
-    //         "Partition: " + (i + 1) + ", start: " + startIndex + ", end: " + shiftedEndIndex + " Level: " + partitionLevel + " LabeL: " + partitionLabel
-    //       )
-    //       // countPartitions = i + 1
-    //       partitionLevel = nextPartitionLevel
-    //       partitionLabel = nextPartitionLabel
-    //     }
-    //     startIndex = shiftedEndIndex
-    //     endIndex = (startIndex + bucketSize).min(fileSize)
-    //   }
-    // }
-
-    // q
   }
 
   def mergeSyntaxStack(
@@ -367,21 +343,28 @@ object Partitioning {
       partition: JsonInputPartition,
       options: JsonOptions
   ): (String, Long, Long, ArrayBuffer[String], ArrayBuffer[Long], Boolean) = {
-    // val now = System.nanoTime;
+    // TODO: this function can be implemented in a more efficient way
+    //    1- read directly from a byte stream and compare the byte values
+    //       of the special characters '{', '}', '[', and ']'
+    //    2- no need to read all keys, just read them at the end by knowing 
+    //       the positions of the remaining open curly-braces.
+    //    3- the push/pop in the array can be improved compared to the default
+    //       and the way it is currently applied
     var syntaxStack: ArrayBuffer[String] = new ArrayBuffer[String]()
     var syntaxPositions: ArrayBuffer[Long] = new ArrayBuffer[Long]()
 
-    val (inputStream, fileSize) = Parser.getInputStream(partition.path)
-    if(partition.start == 0 && partition.end == fileSize) {
+    val (inputStream, fileSize) =
+      Parser.getInputStream(partition.path, options.hdfsPath)
+    if (partition.start == 0 && partition.end == fileSize) {
       // no need for this function for files with one partition
       return (
-      partition.path,
-      partition.start,
-      partition.end,
-      syntaxStack,
-      syntaxPositions,
-      false
-    )
+        partition.path,
+        partition.start,
+        partition.end,
+        syntaxStack,
+        syntaxPositions,
+        false
+      )
     }
     var bufferedReader =
       Parser.getBufferedReader(inputStream, options.encoding, partition.start)
@@ -395,6 +378,36 @@ object Partitioning {
     var append = false
     var appendValue = ""
     val controlChars = HashSet[String]("{", "}", "[", "]", "\"")
+
+
+    if(partition.start > 0) {
+      val (_token, _pos) = Parser.consume(
+        bufferedReader,
+        options.encoding,
+        pos,
+        partition.end,
+        '"'
+      )
+      val isValidString = Parser.isValidString(
+        _token
+          .substring(1, _token.size - 1)
+      )
+
+      
+
+      if (isValidString) { // skip it
+        pos = _pos
+      } else {
+        // TODO: if not valid string search for token and adjust positions
+        // Parser.getNextToken (returns the position as well)
+        // use that position to determine the correct classification 
+        // if start is string or not
+        // reset reader to reconsider json characters
+        bufferedReader =
+          Parser.getBufferedReader(inputStream, options.encoding, pos)
+      }
+    }
+
     while (pos < partition.end) {
       val i = bufferedReader.read()
       val c = i.toChar;
@@ -467,28 +480,6 @@ object Partitioning {
         } else if (isValue) {
           pos =
             Parser.skip(bufferedReader, options.encoding, pos, partition.end, c)
-        } else {
-          val (_token, _pos) = Parser.consume(
-            bufferedReader,
-            options.encoding,
-            pos,
-            partition.end,
-            c
-          )
-          val isValidString = Parser.isValidString(
-            _token
-              .substring(1, _token.size - 1)
-          )
-
-          if (isValidString) { // skip it
-            pos = _pos
-          } else { // only skip the quote character
-            append = true
-            appendValue = "\""
-            // reset reader to reconsider json characters
-            bufferedReader =
-              Parser.getBufferedReader(inputStream, options.encoding, pos)
-          }
         }
       } else if (c == ':') {
         isValue = true
@@ -542,7 +533,8 @@ object Partitioning {
       var response = ""
       val elem = state(i)
       if (elem.equals("[")) {
-        if (dfa.toNextStateIfArray()) {
+        if (dfa.toNextStateIfArray() ||
+          dfa.states(dfa.currentState).stateType.equals("descendant")) {
           response = dfa.checkArray()
           if (response.equals("accept") || response.equals("continue")) {
             level += 1
@@ -584,18 +576,19 @@ object Partitioning {
       options.filePaths
     }
 
-    val partitions = getFilePartitions(filePaths)
+    val partitions = getFilePartitions(filePaths, options)
 
     val sc = SparkContext.getOrCreate()
     val endStates = sc
-      .parallelize(partitions)
+      .makeRDD(partitions.map(p => (p, p.preferredLocations())))
       .map(partition =>
-        getEndState(partition.asInstanceOf[JsonInputPartition], options)
+        getEndState(partition._1.asInstanceOf[JsonInputPartition], options)
       )
       .collect()
     var prevStack = new ArrayBuffer[String]()
     var prevIsString = false
     var prevEnd = 0L
+    var prevPath = ""
     var i: Integer = 0
 
     var partitionInitialStates = ArrayBuffer[
@@ -622,11 +615,17 @@ object Partitioning {
       val (level, skipLevels, dfaState) =
         partitionLevelSkipping(prevStack.toArray, options)
 
-      // println("####### " + i)
+      // println("####### " + i + " Start: " + start + " End: " + end)
       // println("Start state: " + prevStack)
       // println("End state: " + syntaxStack)
-      // println(level + " " + skipLevels + " " + dfaState)
-
+      // println(level + " " + skipLevels + " " + dfaState + " " + isString)
+      if (prevPath != path) {
+        prevStack = new ArrayBuffer[String]()
+        prevIsString = false
+        prevEnd = 0L
+        prevPath = ""
+      }
+      prevPath = path
       val (stack, _syntaxStack, _syntaxPositions) =
         mergeSyntaxStack(prevStack, syntaxStack, syntaxPositions, prevEnd)
 
@@ -652,7 +651,7 @@ object Partitioning {
 
     i = partitionInitialStates.length - 1
     var prevStart = 0L
-    var prevPath = ""
+    prevPath = ""
     var finalPartitions: ArrayBuffer[InputPartition] =
       new ArrayBuffer[InputPartition]
     while (i >= 0) {
@@ -710,10 +709,10 @@ object Partitioning {
       if (shiftedStart < end) {
         val _end = if (prevPath.equals(path)) { prevStart }
         else { end }
-        println(shiftedStart, _end, level, dfaState, initialState)
-
+        // println(shiftedStart, _end, level, dfaState, initialState)
+        val _initialState : Array[Char] = initialState.filter(x => x.size == 1).map(x => x(0).toChar).toArray
         finalPartitions.append(
-          (new JsonInputPartition(path, shiftedStart, _end, level, dfaState))
+          (new JsonInputPartition(path, shiftedStart, _end, level, dfaState, _initialState))
             .asInstanceOf[InputPartition]
         )
 

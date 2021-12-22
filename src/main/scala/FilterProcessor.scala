@@ -1,9 +1,28 @@
+/*
+ * Copyright 2020 University of California, Riverside
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package edu.ucr.cs.bdlab
 
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.immutable.HashMap
 import org.apache.spark.sql.types._
 import scala.util.Try
+import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.beast.sql.GeometryUDT
+import org.locationtech.jts.geom.Geometry;
 
 abstract class Predicate(
     val index: Int, //
@@ -53,7 +72,6 @@ class BooleanPredicate(
       rowSequence: Array[Any],
       predicateIndex: Int
     ): Unit = {
-        // println("booleanPredicate: " + index + " " + predicateIndex)
         predicateValues(index) = rowSequence(predicateIndex)
         if(predicateValues(index) != null)
             propagate(predicateValues, rowSequence)
@@ -137,7 +155,6 @@ class BinaryPredicate(
   var left: Any = null
   var right: Any = null
   def getLeft(rowSequence: Array[Any]): Any = {
-    //   println("LEFT: " + left.getClass())
     if (left.isInstanceOf[Variable]) {
       return rowSequence(left.asInstanceOf[Variable].index)
     } else {
@@ -146,8 +163,6 @@ class BinaryPredicate(
   }
 
   def getRight(rowSequence: Array[Any]): Any = {
-    //   println("RIGHT: " + right.getClass())
-
     if (right.isInstanceOf[Variable]) {
       return rowSequence(right.asInstanceOf[Variable].index)
     } else {
@@ -163,11 +178,15 @@ class BinaryPredicate(
   ): Unit = {
     val v1 = getLeft(rowSequence)
     val v2 = getRight(rowSequence)
+
     if (
-      (v1 != null || v1.isInstanceOf[Constant] || (v1 == null && v2.isInstanceOf[Constant]))
-      && (v2 != null || v2.isInstanceOf[Constant] || (v2 == null && v1.isInstanceOf[Constant]))
+      !(
+        v1.isInstanceOf[Variable] && v2.isInstanceOf[Variable] && (v1 == null || v2 == null)
+      )
       // this means that operations on two variables that are both set to null are not supported
       // e.g. variable1 == variable2 (will not work if both are null)
+      // this can be solved by making the expression:
+      // ((varialbe1 == variable2) || (variable1 == null && variable2 == null))
     ) {
       predicateValues(index) = operator(v1, v2)
       propagate(predicateValues, rowSequence)
@@ -194,7 +213,17 @@ class LessThan(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
-    v1.asInstanceOf[Double] < v2.asInstanceOf[Double]
+    val _v1 = if(v1.isInstanceOf[Double]) {
+      v1.asInstanceOf[Double]
+    } else {
+      v1.asInstanceOf[Long]
+    }
+    val _v2 = if(v2.isInstanceOf[Double]) {
+      v2.asInstanceOf[Double]
+    } else {
+      v2.asInstanceOf[Long]
+    }
+    _v1 < _v2
   }
 }
 
@@ -203,7 +232,17 @@ class LessThanOrEquals(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
-    v1.asInstanceOf[Double] <= v2.asInstanceOf[Double]
+    val _v1 = if(v1.isInstanceOf[Double]) {
+      v1.asInstanceOf[Double]
+    } else {
+      v1.asInstanceOf[Long]
+    }
+    val _v2 = if(v2.isInstanceOf[Double]) {
+      v2.asInstanceOf[Double]
+    } else {
+      v2.asInstanceOf[Long]
+    }
+    _v1 <= _v2
   }
 }
 
@@ -212,7 +251,17 @@ class GreaterThan(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
-    v1.asInstanceOf[Double] > v2.asInstanceOf[Double]
+    val _v1 = if(v1.isInstanceOf[Double]) {
+      v1.asInstanceOf[Double]
+    } else {
+      v1.asInstanceOf[Long]
+    }
+    val _v2 = if(v2.isInstanceOf[Double]) {
+      v2.asInstanceOf[Double]
+    } else {
+      v2.asInstanceOf[Long]
+    }
+    _v1 > _v2
   }
 }
 
@@ -221,7 +270,17 @@ class GreaterThanOrEquals(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
-    v1.asInstanceOf[Double] >= v2.asInstanceOf[Double]
+    val _v1 = if(v1.isInstanceOf[Double]) {
+      v1.asInstanceOf[Double]
+    } else {
+      v1.asInstanceOf[Long]
+    }
+    val _v2 = if(v2.isInstanceOf[Double]) {
+      v2.asInstanceOf[Double]
+    } else {
+      v2.asInstanceOf[Long]
+    }
+    _v1 >= _v2
   }
 }
 
@@ -239,7 +298,9 @@ class StringContains(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
-    v1.asInstanceOf[String] contains v2.asInstanceOf[String]
+    val _v1 = if(v1.isInstanceOf[UTF8String]) { v1.asInstanceOf[UTF8String].toString } else { v1.asInstanceOf[String] }
+    val _v2 = if(v2.isInstanceOf[UTF8String]) { v2.asInstanceOf[UTF8String].toString } else { v2.asInstanceOf[String] }
+    _v1 contains _v2.asInstanceOf[String]
   }
 }
 
@@ -248,7 +309,9 @@ class StringStartsWith(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
-    v1.asInstanceOf[String] startsWith v2.asInstanceOf[String]
+    val _v1 = if(v1.isInstanceOf[UTF8String]) { v1.asInstanceOf[UTF8String].toString } else { v1.asInstanceOf[String] }
+    val _v2 = if(v2.isInstanceOf[UTF8String]) { v2.asInstanceOf[UTF8String].toString } else { v2.asInstanceOf[String] }
+    _v1 startsWith _v2.asInstanceOf[String]
   }
 }
 
@@ -257,16 +320,44 @@ class StringEndsWith(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
-    v1.asInstanceOf[String] endsWith v2.asInstanceOf[String]
+    val _v1 = if(v1.isInstanceOf[UTF8String]) { v1.asInstanceOf[UTF8String].toString } else { v1.asInstanceOf[String] }
+    val _v2 = if(v2.isInstanceOf[UTF8String]) { v2.asInstanceOf[UTF8String].toString } else { v2.asInstanceOf[String] }
+    _v1 endsWith _v2.asInstanceOf[String]
+  }
+}
+
+class GeometryType(
+    override val index: Int,
+    override val parent: Predicate
+) extends BinaryPredicate(index, parent) {
+  val geom = new GeometryUDT()
+  override def operator(v1: Any, v2: Any): Boolean = {
+    val _v1 = if(v1.isInstanceOf[UTF8String]) {v1.asInstanceOf[UTF8String].toString} else {v1.asInstanceOf[String]}
+    val geomObj = geom.deserialize(_v1)
+    
+    val _v2 = if(v2.isInstanceOf[UTF8String]) {v2.asInstanceOf[UTF8String].toString} else {v2.asInstanceOf[String]}
+    return geomObj.getGeometryType.equalsIgnoreCase(_v2)
+  }
+}
+
+class GeometryWithin(
+    override val index: Int,
+    override val parent: Predicate
+) extends BinaryPredicate(index, parent) {
+  val geom = new GeometryUDT()
+  override def operator(v1: Any, v2: Any): Boolean = {
+    val geom1 = geom.deserialize(v1)
+    val geom2 = v2.asInstanceOf[Geometry]
+    return geom1.within(geom2)
   }
 }
 
 object FilterProcessor {
-  val multinaryOperators = List[String]( // take two or more operands
+  val multinaryOperators = List[String]( // takes two or more operands
     """\|\|""",
     "&&"
   )
-  val binaryOperators = List( // take exactly two operands
+  val binaryOperators = List( // takes exactly two operands
     "==",
     "!=",
     "<=",
@@ -276,11 +367,15 @@ object FilterProcessor {
     " in ",
     " stringContains ",
     " stringStartsWith ",
-    " stringEndsWith "
+    " stringEndsWith ",
+    " geometryType ",
+    " geometryWithin "
   )
-  val unaryOperators = List( // take one operand
+  val unaryOperators = List( // takes one operand
     "~"
   )
+
+  // TODO: add functionality to easily extend those lists instead of manually modifying this file
 
   def splitTuple(tuple : String) : (String, String) = {
       var countBrackets = 0
@@ -319,6 +414,7 @@ object FilterProcessor {
             "StringEndsWith",
             "StringStartsWith")
 
+    // TODO: improve code to avoid all of these 'if' statements
     for(op <- sparkFilterOperators) {
         if(filter startsWith  op+"(") {
             if(op == "AlwaysFalse") {
@@ -333,7 +429,6 @@ object FilterProcessor {
                 return "~" + sparkFilterToJsonFilter(filter.substring(op.size+1, filter.size-1), rowMap)
             } else {
                 val (v1, v2) = splitTuple(filter.substring(op.size))
-                // println(op, v1, v2)
                 val _op = if(op == "And") { "&&"}
                 else if(op == "Or") { "||" }
                 else if(op == "EqualNullSafe" || op == "EqualTo") { "==" }
@@ -357,9 +452,20 @@ object FilterProcessor {
     }
   }
 
-  def splitByBracket(expr: String): (String, HashMap[String, String]) = {
-    // this function replaces expressions with in quotes with a variable
+  def splitByBracket(_expr: String): (String, HashMap[String, String]) = {
+    // this function replaces expressions within brackets with a variable
     // it makes it easy to parse for the other operands
+    
+    // first handle strings within quotes
+    var expr = _expr
+    val foundStrings = """((?<![\\])['"])((?:.(?!(?<![\\])\1))*.?)\1""".r.findAllMatchIn(expr).toList.map(_.toString)
+    var foundStringsMap = new HashMap[String, String]()
+    var i = 0
+    for(s <- foundStrings) {
+      expr = expr.replace(s, "##" + i)
+      foundStringsMap += ("##" + i -> s)
+      i+=1
+    }
     var counter = 0
     var map = new HashMap[String, String]()
     var newExpr = ""
@@ -368,7 +474,7 @@ object FilterProcessor {
     var endIndex = -1
     var subExprCount = -1
 
-    var i = 0
+    i = 0
     for (c <- expr) {
       if (c == '(') {
         if (counter == 0) {
@@ -397,6 +503,10 @@ object FilterProcessor {
     if (endIndex < expr.size) {
       newExpr += expr.substring(endIndex + 1)
     }
+    for((k,v) <- foundStringsMap) {
+      newExpr = newExpr.replace(k, v)
+      map = map.map({ case (k1,v1) => k1 -> v1.replace(k, v)})
+    }
     return (newExpr.trim(), map)
   }
 
@@ -410,6 +520,7 @@ object FilterProcessor {
     var newIndex = index
     var variables = _variables
     val (_expr, map) = splitByBracket(expr.replaceAll(raw"~\s+", "~")) // handle brackets
+    
     if(_expr.trim == "") {
         return (null, _variables, index)
     }
@@ -454,6 +565,8 @@ object FilterProcessor {
     }
     for (op <- binaryOperators) {
       val operands = _expr.split("(?i)"+op).map(_.trim)
+      // TODO: improve code to avoid all of these 'if' statements and to easily
+      //       extend with new operators
       if (operands.size == 2) {
         var predicate : BinaryPredicate = if(op == "==") {
             new Equal(newIndex, parent)
@@ -475,6 +588,10 @@ object FilterProcessor {
             new StringStartsWith(newIndex, parent)
         } else if(op == " stringEndsWith ") {
             new StringEndsWith(newIndex, parent)
+        } else if(op == " geometryType ") {
+           new GeometryType(newIndex, parent)
+        } else if(op == " geometryWithin ") {
+           new GeometryWithin(newIndex, parent)
         } else {
             new BinaryPredicate(newIndex, parent)
         }
@@ -504,7 +621,6 @@ object FilterProcessor {
         }
     }
     if(_expr startsWith "@.") { // variable
-
         // get variable row index
         val key = _expr.substring(2)
         val (rowIndex, dataType, _) = rowMap(key)
@@ -517,9 +633,7 @@ object FilterProcessor {
             new BooleanPredicate(newIndex-1, parent)
         } else { parent}
         if(variables contains key) {
-            // val variable = variables(key)
             variables(key).parents.append(_parent)
-            // variables(key) = variable
         } else {
             val variable = new Variable(rowIndex)
             variable.parents.append(_parent)
@@ -529,7 +643,14 @@ object FilterProcessor {
         
     } else { // constant
         val value : Any = if(_expr startsWith "\"") { // string
-            return(new Constant(_expr.substring(1, _expr.size-1)), variables, newIndex)
+          val value = if(parent.isInstanceOf[GeometryWithin]) {
+            // parse string as geometry for geometry filter
+            val geom = new GeometryUDT()
+            geom.deserializeWKT(_expr.substring(1, _expr.size-1))
+          } else {
+            _expr
+          }
+            return(new Constant(value), variables, newIndex)
         } else if (_expr startsWith "[") { // array
             // TODO parse array
             return(new Constant(null), variables, newIndex)
@@ -539,11 +660,21 @@ object FilterProcessor {
             return(new Constant(false), variables, newIndex)
         } else if(_expr.toLowerCase() == "true") {
             return(new Constant(true), variables, newIndex)
-        } else { // assume it is a number for now
+        } else if ("""[0-9\-NI]""".r.pattern.matcher(_expr.substring(0,1)).matches) { // assume it is a number for now
+            if(_expr contains ".")
             return(new Constant(_expr.toDouble), variables, newIndex)
+            else
+            return(new Constant(_expr.toLong), variables, newIndex)
+        } else { // default to string even if not within double quotes
+          val value = if(parent.isInstanceOf[GeometryWithin]) {
+            val geom = new GeometryUDT()
+            geom.deserializeWKT(_expr)
+          } else {
+            _expr
+          }
+          return(new Constant(value), variables, newIndex)
         }
     }
-
     return (null, variables, newIndex)
   }
 }

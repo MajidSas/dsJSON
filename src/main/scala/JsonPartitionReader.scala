@@ -1,8 +1,25 @@
+/*
+ * Copyright 2020 University of California, Riverside
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package edu.ucr.cs.bdlab
 
 import org.apache.spark.sql.connector.read.{PartitionReader}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import com.fasterxml.jackson.module.scala.deser.overrides
 import org.apache.hadoop.fs.FSDataInputStream
 import java.io.BufferedReader
@@ -30,6 +47,8 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
   var value: Any = null
   var fileSize: Long = 0L;
   var syntaxStackArray: ArrayBuffer[Char] = ArrayBuffer[Char]()
+  var stackPos : Int = -1
+  var maxStackPos : Int = -1
   var stateLevel = 0;
   var splitPath: String = "";
   var filterVariables : HashMap[String, Variable] = null
@@ -39,10 +58,6 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       schema: StructType,
       options: JsonOptions) {
     this()
-    // this.inputPartition = if(options.partitioningStrategy.equals("speculation")) {
-    //   println("Speculating.....")
-    //   Partitioning.speculate(_inputPartition, options)
-    // } else {_inputPartition}
     this.inputPartition = inputPartition
     this.schema = schema
     this.options = options
@@ -54,7 +69,8 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
     start = inputPartition.start
     end = inputPartition.end
     val startLevel = inputPartition.startLevel
-    val (_stream, _fileSize) = Parser.getInputStream(filePath)
+    // ^ these values have already been set in previous stages
+    val (_stream, _fileSize) = Parser.getInputStream(filePath, options.hdfsPath)
     stream = _stream
     fileSize = _fileSize
     println(
@@ -62,68 +78,56 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       inputPartition.end,
       inputPartition.startLevel,
       inputPartition.dfaState
-      // inputPartition.startLabel
     )
     println("Filters: "+options.filterString)
     val (_, _filterVariables, _filterSize) : (Any, HashMap[String, Variable], Int) =  FilterProcessor.parseExpr(options.filterString, options.rowMap)
     filterVariables = _filterVariables
     filterSize = _filterSize
     // println(options.encounteredTokens)
-
-    syntaxStackArray = Parser.initSyntaxStack(dfa, startLevel)
+    val initialState = inputPartition.initialState
+    syntaxStackArray = Parser.initSyntaxStack(dfa, startLevel, initialState)
+    stackPos = syntaxStackArray.size-1
+    maxStackPos = stackPos
     dfa.setState(inputPartition.dfaState)
 
     println(syntaxStackArray)
     println(dfa)
-    // println(schema)
-    // println(filters.length)
-    // println(filters(0).references.toList)
-    reader = Parser.getBufferedReader(stream, options.encoding, start)
-    var i = 0
-    var s = ""
-    for (i <- 0 to 100) {
-      s += reader.read().toChar
-    }
-    println("START: " + s)
 
-    s = ""
-    reader = Parser.getBufferedReader(stream, options.encoding, end-100)
-    for (i <- 0 to 100) {
-      s += reader.read().toChar
-    }
-    println("END: " + s)
     reader = Parser.getBufferedReader(stream, options.encoding, start)
     pos = start;
   }
 
   override def next() = {
 
-    val (hasNext, _value, _, newPos) = Parser.getNextMatch(
+    val (hasNext, _value, _, newPos, _stackPos, _maxStackPos) = Parser.getNextMatch(
       reader,
       options.encoding,
       start,
       end,
       pos,
       syntaxStackArray,
+      stackPos,
+      maxStackPos,
       dfa,
       rowMap = options.rowMap,
       filterVariables = filterVariables,
       filterSize = filterSize,
     )
     pos = newPos
-    count += 1
-    if(hasNext == false || value == null) {
-        println(hasNext + " start: " + start + " pos: " + pos + " end: " + end + " count: " + count)
-        // println(value)
-    }
+    stackPos = _stackPos
+    maxStackPos = _maxStackPos
+    // count += 1
+    // if(hasNext == false || value == null) {
+    //     println(hasNext + " start: " + start + " pos: " + pos + " end: " + end + " count: " + count)
+    // }
     value = _value
     
     hasNext
   }
 
 
-  override def get(): InternalRow = {
-    value.asInstanceOf[InternalRow]
+  override def get(): GenericInternalRow = {
+    value.asInstanceOf[GenericInternalRow]
   }
 
   override def close() {

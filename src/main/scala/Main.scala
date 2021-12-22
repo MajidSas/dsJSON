@@ -1,4 +1,21 @@
+/*
+ * Copyright 2020 University of California, Riverside
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package edu.ucr.cs.bdlab
+import org.apache.spark.sql.types._
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.spark.rdd.RDD
@@ -10,29 +27,11 @@ import org.apache.spark.sql.DataFrame
 
 object Main {
   def main(args: Array[String]): Unit = {
-    val (input, jsonPath, partitioningStrategy, sqlFilter) = (args(0), args(1), args(2), args(3))
-    val conf = new SparkConf()
-//      .setMaster(server)
-      .set("spark.sql.files.maxPartitionBytes", "134217728") // 128MB
-      .set("spark.hadoop.dfs.block.size", "134217728")
-      .set(
-        "spark.hadoop.mapreduce.input.fileinputformat.split.minsize",
-        "134217728"
-      )
-      .set(
-        "spark.hadoop.mapreduce.input.fileinputformat.split.maxsize",
-        "134217728"
-      )
-      .set(
-        "spark.hadoop.mapreduce.input.fileinputformat.input.dir.recursive",
-        "true"
-      )
-    //  .set("spark.driver.extraJavaOptions","-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005")
-      .setAppName("json-stream")
+    val (count, hdfsPath, input, jsonPath, partitioningStrategy, sqlFilter) = (args(0), args(1), args(2), args(3), args(4), args(5))
     val spark =
-      SparkSession.builder().config(conf).appName("json-stream").getOrCreate()
-
-    val pathGlobFilter = "*.geojson"
+      SparkSession.builder().appName("jsondsp").getOrCreate()
+      
+    val pathGlobFilter = ""
     val recursive = false
     val schemaBuilder = if(partitioningStrategy.equals("speculation")) {"start"} else { "fullPass" }
     val encoding = "UTF-8"
@@ -43,20 +42,25 @@ object Main {
       jsonPath,
       partitioningStrategy,
       schemaBuilder,
-      encoding
+      encoding,
+      hdfsPath,
     )
 
     df.printSchema()
-    // println(
-    //   "###########################\n\n\nFOUND RECORDS: " +
-    //   df.count().toString() + "\n\n\n###########################"
-    // )
-    // df.summary().show()
 
     df.createOrReplaceTempView("table")
     val sqlDF = spark.sql("SELECT *  FROM table WHERE " + sqlFilter)
-    sqlDF.show()
-    // sqlDF.write.format("csv").save("productIds.csv")
+    // sqlDF.describe().show()
+
+    
+    if(count == "count") {
+      println(
+        "###########################\n\n\nFOUND RECORDS: " +
+        sqlDF.count().toString() + "\n\n\n###########################"
+      )
+    } else {
+      sqlDF.foreach(row => {})
+    }
   }
 }
 
@@ -68,13 +72,14 @@ object JsonStream {
       jsonPath: String,
       partitioningStrategy: String,
       schemaBuilder: String,
-      encoding: String
+      encoding: String,
+      hdfsPath: String = "local",
   ): DataFrame = {
 
     // Register the Geometry user-defined data type
     val spark = SparkSession.builder().getOrCreate()
     SparkSQLRegistration.registerUDT
-
+    
     return spark.read
       .format("edu.ucr.cs.bdlab.JsonSource")
       .option("jsonPath", jsonPath)
@@ -83,6 +88,7 @@ object JsonStream {
       .option("partitioningStrategy", partitioningStrategy)
       .option("schemaBuilder", schemaBuilder)
       .option("encoding", encoding)
+      .option("hdfsPath", hdfsPath)
       .load(input)
   }
 }

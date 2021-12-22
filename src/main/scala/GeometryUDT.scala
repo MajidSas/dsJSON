@@ -1,86 +1,75 @@
+/*
+ * Copyright 2020 University of California, Riverside
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.spark.beast.sql
 
 import org.apache.spark.sql.types._
-
 import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.CoordinateSequence;
+import org.locationtech.jts.io.geojson.GeoJsonReader;
+import org.locationtech.jts.io.geojson.GeoJsonWriter;
+import org.locationtech.jts.io.WKTReader
 import org.locationtech.jts.geom.Geometry;
-import org.locationtech.jts.geom.LineString;
-import org.locationtech.jts.geom.LinearRing;
-import org.locationtech.jts.geom.Point;
-import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.locationtech.jts.geom.impl.CoordinateArraySequenceFactory;
+import org.apache.spark.unsafe.types.UTF8String
 
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{
   GenericInternalRow,
   UnsafeArrayData
 }
 import org.apache.spark.sql.types._
 
-class GeometryUDT(isCollection: Boolean) extends UserDefinedType[Geometry] {
+class GeometryUDT() extends UserDefinedType[Geometry] {
 
   val geometryFactory: GeometryFactory = new GeometryFactory(
     new PrecisionModel(PrecisionModel.FLOATING),
     4326,
     CoordinateArraySequenceFactory.instance()
   );
+  // the following two classes are not serializable
+  var geoJsonReader : GeoJsonReader = null
+  var geoJsonWriter : GeoJsonWriter = null
+  var wktReader : WKTReader = null
 
-  override def sqlType: StructType = {
-    if (isCollection) {
-      StructType(
-        Seq(
-          StructField("type", StringType, nullable = false),
-          StructField(
-            "geometries",
-            ArrayType(
-              StructType(
-                Seq(
-                  StructField("type", StringType, nullable = false),
-                  StructField("coordinates", StringType, nullable = true)
-                )
-              )
-            ),
-            nullable = true
-          )
-        )
-      )
-    } else {
-      StructType(
-        Seq(
-          StructField("type", StringType, nullable = false),
-          StructField("coordinates", StringType, nullable = true)
-        )
-      )
-    }
-
+  override def sqlType: DataType = {
+      StringType
   }
 
-  override def serialize(obj: Geometry): InternalRow = {
-    println("serializing")
-    println(obj)
-    val row = new GenericInternalRow(4)
-    row
+  override def serialize(obj: Geometry): UTF8String = {
+    if(geoJsonWriter == null)
+    geoJsonWriter = new GeoJsonWriter(7)
+    val result = geoJsonWriter.write(obj)
+    return UTF8String.fromString(result)
   }
 
   override def deserialize(datum: Any): Geometry = {
-    datum match {
-      case row: InternalRow =>
-        println("deserializing")
-        println(row)
-        val geometryType: String = "point"
-        // List<Coordinate> coordinates;
-        // List<Geometry> parts;
-        // Geometry jtsGeom;
-        (new Point(
-          (new Coordinate(0, 0)).asInstanceOf[CoordinateSequence],
-          geometryFactory
-        )).asInstanceOf[Geometry];
-    }
+    if(geoJsonReader == null)
+    geoJsonReader = new GeoJsonReader(geometryFactory)
+    val str = if(datum.isInstanceOf[UTF8String]) {datum.asInstanceOf[UTF8String].toString} else {datum.asInstanceOf[String]}
+    val result : Geometry = geoJsonReader.read(str)
+    return result
   }
 
+  def deserializeWKT(datum: Any): Geometry = {
+    if(wktReader == null)
+    wktReader = new WKTReader(geometryFactory)
+    val str = if(datum.isInstanceOf[UTF8String]) {datum.asInstanceOf[UTF8String].toString} else {datum.asInstanceOf[String]}
+    val result : Geometry = wktReader.read(str)
+    return result
+  }
   override def pyUDT: String = "GeometryUDT"
 
   override def userClass: Class[Geometry] = classOf[Geometry]

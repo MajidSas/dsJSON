@@ -15,7 +15,7 @@
  */
 package org.apache.spark.beast
 
-import org.apache.spark.beast.sql._
+import org.apache.spark.beast.sql.GeometryUDT
 import org.apache.spark.sql.types.UDTRegistration
 import org.locationtech.jts.geom.Geometry
 

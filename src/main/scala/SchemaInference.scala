@@ -1,9 +1,24 @@
+/*
+ * Copyright 2020 University of California, Riverside
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package edu.ucr.cs.bdlab
 
+import org.apache.spark.beast.sql.GeometryUDT
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.types._
-import org.apache.spark.beast.sql.GeometryUDT
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Try
 import org.apache.hadoop.fs.FSDataInputStream
@@ -12,94 +27,23 @@ import java.lang.reflect.Field
 import scala.collection.immutable.HashMap
 import org.apache.hadoop.util.hash.Hash
 import javax.xml.crypto.Data
+
 object SchemaInference {
 
-  def getTokenLevels(
-      schema: StructType,
-      level: Int,
-      dfaState: Int
-  ): HashMap[String, Set[(Int, Int)]] = {
-    var m: HashMap[String, Set[(Int, Int)]] = HashMap[String, Set[(Int, Int)]]()
-    var m2: HashMap[String, Set[(Int, Int)]] = null
-    for (field <- schema.iterator) {
-      if (field.dataType.isInstanceOf[StructType]) {
-        m2 = getTokenLevels(
-          field.dataType.asInstanceOf[StructType],
-          level + 1,
-          dfaState
-        )
-      } else if (
-        field.dataType.isInstanceOf[ArrayType] &&
-        field.dataType
-          .asInstanceOf[ArrayType]
-          .elementType
-          .isInstanceOf[StructType]
-      ) {
-        m2 = getTokenLevels(
-          field.dataType
-            .asInstanceOf[ArrayType]
-            .elementType
-            .asInstanceOf[StructType],
-          level + 2,
-          dfaState
-        )
-      } else if (field.dataType.isInstanceOf[GeometryUDT]) {
-        m2 = getTokenLevels(
-          field.dataType
-            .asInstanceOf[GeometryUDT]
-            .sqlType,
-          level + 1,
-          dfaState
-        )
-      }
-
-      if (m2 != null) {
-        m = Parser.mergeMapSet(m, m2)
-      }
-      m = Parser.addToken(m, field.name, level, dfaState)
-    }
-    m
-  }
 
   def getEncounteredTokens(
       options: JsonOptions,
       schema: StructType
-  ): HashMap[String, Set[(Int, Int)]] = {
+  ): HashMap[String, Set[(Int, Int, Int)]] = {
     // extract token levels from query, encountered tokens, and schema
     var dfa = options.getDFA()
-    var tokenLevels = HashMap[String, Set[(Int, Int)]]()
+    var tokenLevels = HashMap[String, Set[(Int, Int, Int)]]()
     var maxQueryLevel = dfa.states.length
     for (token <- dfa.getTokens()) {
       for (state <- dfa.getTokenStates(token)) {
         tokenLevels = Parser.addToken(tokenLevels, token, state, state)
       }
     }
-    val lastQueryToken = dfa.states.last.value;
-    val schemaHasLastToken = Try(schema.apply(lastQueryToken)).isSuccess
-    val isArrayLastToken = if (schemaHasLastToken && schema.length == 1) {
-      schema.apply(lastQueryToken).dataType.isInstanceOf[ArrayType]
-    } else {
-      false
-    }
-    if (
-      !(schemaHasLastToken && schema.length == 1
-        && !Parser.hasInnerStruct(schema.apply(lastQueryToken).dataType))
-    ) {
-      val _schema = if (isArrayLastToken) {
-        schema
-          .apply(lastQueryToken)
-          .dataType
-          .asInstanceOf[ArrayType]
-          .elementType
-          .asInstanceOf[StructType]
-      } else {
-        schema
-      }
-      val tokenLevelsSchema =
-        getTokenLevels(_schema, maxQueryLevel + 1, maxQueryLevel)
-      tokenLevels = Parser.mergeMapSet(tokenLevels, tokenLevelsSchema)
-    }
-
     return Parser.mergeMapSet(tokenLevels, options.encounteredTokens)
 
   }
@@ -128,15 +72,30 @@ object SchemaInference {
   def mapToStruct(
       m: HashMap[String, Any],
       nullToString: Boolean = false,
-      detectGeometry: Boolean = false
+      detectGeometry: Boolean = false,
+      noComplexNesting: Boolean = true, // converts big nested fields to string
+      maxSubFields: Int = 100
   ): StructType = {
     var schema = new StructType()
     for ((k, v) <- m) {
-      if (v.isInstanceOf[HashMap[_, _]]) {
-        val t = v.asInstanceOf[HashMap[String, Any]]
+      if(k == "geometry" && v.isInstanceOf[HashMap[_, _]] &&
+        v.asInstanceOf[HashMap[String, Any]].contains("coordinates")) {
         schema = schema.add(
-          StructField(k, mapToStruct(t, nullToString, detectGeometry), true)
+          StructField(k, new GeometryUDT(), true)
         )
+      }
+      else if (v.isInstanceOf[HashMap[_, _]]) {
+        val t = v.asInstanceOf[HashMap[String, Any]]
+        if (noComplexNesting && t.size > maxSubFields) {
+          schema = schema.add(
+            StructField(k, StringType, true)
+          )
+        } else {
+            schema = schema.add(
+            StructField(k, mapToStruct(t, nullToString, detectGeometry), true)
+          )
+        }
+        
       } else {
         val (t, _subT) = v.asInstanceOf[(DataType, Any)]
         if (t.isInstanceOf[ArrayType]) {
@@ -159,12 +118,13 @@ object SchemaInference {
   }
 
   def selectType(t1: DataType, t2: DataType): DataType = {
-    // only replaces NullType or selects the first type if conflict (e.g. one double and one string)
-    // when support for IntegerType is added conflict with DoubleType can be resolved (along with other type conflicts)
+    // resolves type conflicts when merging
     if (t1 == t2 || t2 == NullType) {
       return t1
     } else if (t1 == NullType) {
       return t2
+    } else if ((t1 == DoubleType && t2 == LongType) || (t1 == LongType && t2 == DoubleType)) {
+      return DoubleType
     } else {
       return t1
     }
@@ -209,12 +169,12 @@ object SchemaInference {
       useWhole: Boolean,
       getTokens: Boolean,
       jsonOptions: JsonOptions
-  ): (HashMap[String, Any], HashMap[String, Set[(Int, Int)]], Int) = {
+  ): (HashMap[String, Any], HashMap[String, Set[(Int, Int, Int)]], Int) = {
     var parsedRecords = new ArrayBuffer[Any];
-    var encounteredTokens = HashMap[String, Set[(Int, Int)]]()
+    var encounteredTokens = HashMap[String, Set[(Int, Int, Int)]]()
     var dfa = jsonOptions.getDFA()
     val (inputStream: FSDataInputStream, fileSize: Long) =
-      Parser.getInputStream(partition.path)
+      Parser.getInputStream(partition.path, jsonOptions.hdfsPath)
     val end = if (partition.end == -1) { fileSize }
     else { partition.end }
     val reader = Parser.getBufferedReader(
@@ -223,7 +183,9 @@ object SchemaInference {
       partition.start
     )
     dfa = jsonOptions.getDFA()
-    var syntaxStackArray = Parser.initSyntaxStack(dfa, partition.startLevel)
+    var syntaxStackArray = Parser.initSyntaxStack(dfa, partition.startLevel, partition.initialState)
+    var stackPos = syntaxStackArray.size-1
+    var maxStackPos = stackPos
     dfa.setState(partition.dfaState)
     val lastQueryToken = dfa.states.last.value
     var pos: Long = partition.start
@@ -231,19 +193,23 @@ object SchemaInference {
     var mergedMaps = new HashMap[String, Any]()
     var count = 0
     while ((count < limit || useWhole) && found) {
-      val (_found, value, recordEncounteredTokens, newPos) =
+      val (_found, value, recordEncounteredTokens, newPos, _stackPos, _maxStackPos) =
         Parser.getNextMatch(
           reader,
           jsonOptions.encoding,
-          0,
+          partition.start,
           end,
           pos,
           syntaxStackArray,
+          stackPos,
+          maxStackPos,
           dfa,
           getTokens,
           true // parse type
         )
       found = _found
+      stackPos = _stackPos
+      maxStackPos = _maxStackPos
       count += 1
       if (value != null) {
         val _value = if (value.isInstanceOf[HashMap[_, _]]) {
@@ -255,18 +221,25 @@ object SchemaInference {
 
         encounteredTokens =
           Parser.mergeMapSet(encounteredTokens, recordEncounteredTokens)
+        encounteredTokens = Parser.mergeMapSet(
+                encounteredTokens,
+                Parser.getEncounteredTokens(
+                  value,
+                  dfa.currentState,
+                  dfa.currentState
+                )
+              )
       }
       pos = newPos
     }
 
-    println("RECORDS FOUND: " + count)
     reader.close()
     inputStream.close()
 
     return (mergedMaps, encounteredTokens, count)
   }
   def inferUsingStart(jsonOptions: JsonOptions): StructType = {
-    var encounteredTokens = HashMap[String, Set[(Int, Int)]]()
+    var encounteredTokens = HashMap[String, Set[(Int, Int, Int)]]()
     var mergedMaps = new HashMap[String, Any]()
     var dfa = jsonOptions.getDFA()
     val filePaths = jsonOptions.filePaths
@@ -289,12 +262,10 @@ object SchemaInference {
         Parser.mergeMapSet(encounteredTokens, _encounteredTokens)
       i += 1
     }
-    jsonOptions.encounteredTokens = encounteredTokens
 
     val schema =
-      mapToStruct(mergedMaps, nullToString = true, detectGeometry = false)
+      mapToStruct(mergedMaps, nullToString = true, detectGeometry = true)
 
-    encounteredTokens = getEncounteredTokens(jsonOptions, schema)
     jsonOptions.encounteredTokens = encounteredTokens
 
     return schema
@@ -305,10 +276,10 @@ object SchemaInference {
     val partitions = jsonOptions.partitions
     val sc = SparkContext.getOrCreate()
     val stageOutput = sc
-      .parallelize(partitions)
+      .makeRDD(partitions.map(p => (p, p.preferredLocations())))
       .map(partition =>
         inferOnPartition(
-          partition.asInstanceOf[JsonInputPartition],
+          partition._1.asInstanceOf[JsonInputPartition],
           -1,
           true,
           false,
@@ -321,13 +292,13 @@ object SchemaInference {
     for (elem <- stageOutput) {
       val (schemaMap, _encounteredTokens, _nParsedRecords) =
         elem.asInstanceOf[
-          (HashMap[String, Any], HashMap[String, Set[(Int, Int)]], Int)
+          (HashMap[String, Any], HashMap[String, Set[(Int, Int, Int)]], Int)
         ]
       mergedMaps = mergedMaps.merged(schemaMap)(reduceKey)
     }
 
     val schema =
-      mapToStruct(mergedMaps, nullToString = true, detectGeometry = false)
+      mapToStruct(mergedMaps, nullToString = true, detectGeometry = true)
     return schema
   }
 

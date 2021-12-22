@@ -1,10 +1,16 @@
 # Example usage
 
 ## Example one with full pass partitioner and schema builder
-`spark-submit --master local --class edu.ucr.cs.bdlab.Main ./target/scala-2.12/json-stream-assembly-0.1.jar "./input/*.json" "\$.products[*]" "fullPass"`
+`spark-submit --master local --class edu.ucr.cs.bdlab.Main ./target/scala-2.12/json-stream-assembly-0.1.jar "./input/*.json" "\$.products[*]" "fullPass" "price > 20"`
 
 ## Example one with speculating partitioner and efficient schema builder
-`spark-submit --master local --class edu.ucr.cs.bdlab.Main ./target/scala-2.12/json-stream-assembly-0.1.jar "./input/*.json" "\$.products[*]" "speculation"`
+`spark-submit --master local --class edu.ucr.cs.bdlab.Main ./target/scala-2.12/json-stream-assembly-0.1.jar "./input/*.json" "\$.products[*]" "speculation" "SQL_FILTER_HERE_OR_EMPTY_STRING"`
+
+# Compilation
+Just use `sbt assembly`
+sbt version in this project: 1.4.3
+This code was developed and tested for Spark 3.1, Java 1.8, Scala 2.12.
+Refer to: `build.sbt` for all dependencies.
 
 # Package structure and flow
 * `Main.scala`: prints the schema and implements a simple counting program
@@ -16,9 +22,10 @@
 * `JsonBatch.scala`: the only method of relevance is the createPartitions method, but it only loads the already created partitions.
 * `JsonPartitionReader.scala`: the initialization starts by shifting the start and end index for the case of speculative partitioning. Then, it initializes the syntax stack (corresponding to the depth in the file), and also sets the state of the DFA.
 * `Parser.scala`: contains all the functions used for parsing and working with input files.
+* `FilterProcessor.scala`: contains all the classes and predicates for buliding the expression tree and evaluating ghe filters.
 
 # Remaining components:
-* Compiling filters in a JsonPath query
-* Combining SQL filters with the JsonPath filters into a single expression tree
-* Modify the parse() function to take into account the requiredSchema and the filtering expression.
-* Implement serialization and de-serialization for the geometry type
+* Refer to the TODO comments in the code.
+* There will a detailed project plan for implementing/fixing all of these components.
+* Refer to the paper for details on how it works:
+[PAPER LINK HERE]

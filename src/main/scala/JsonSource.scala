@@ -1,3 +1,19 @@
+/*
+ * Copyright 2020 University of California, Riverside
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package edu.ucr.cs.bdlab
 
 import org.apache.spark.sql.SparkSession
@@ -9,7 +25,6 @@ import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.sources.DataSourceRegister
 import org.apache.spark.sql.types._
-import org.apache.spark.beast.sql.GeometryUDT
 import scala.collection.mutable.ArrayBuffer
 import scala.util.Try
 
@@ -20,31 +35,40 @@ import java.lang.reflect.Field
 class JsonSource extends TableProvider with DataSourceRegister {
   var jsonOptions: JsonOptions = null
 
-  override def shortName(): String = "json-parallel-stream"
+  override def shortName(): String = "jsondsp"
   override def inferSchema(options: CaseInsensitiveStringMap): StructType = {
     if (options != null) {
-      val keys = options.keySet();
-      println("Options keys: " + keys)
       jsonOptions = new JsonOptions()
       jsonOptions.init(options)
     }
 
     jsonOptions.filePaths = Partitioning.getFilePaths(jsonOptions)
 
-    println("Inferring scheme...")
-
+    // TODO: update if statements to handle all possible four choice
+    // we only considered two scenarios, but it should work for any choices 
+    println("schemaBuilder: " + jsonOptions.schemaBuilder)
     if (jsonOptions.schemaBuilder.equals("fullPass")) {
       println("Creating partitions with a full pass ...")
       jsonOptions.partitions = Partitioning.fullPass(jsonOptions)
-      return SchemaInference.fullInference(jsonOptions)
+      println("Inferring schema using whole data...")
+      val schema = SchemaInference.fullInference(jsonOptions)
+      return schema
     } else {
+      println("Inferring schema using start of file...")
+      val t0 = System.nanoTime()
       jsonOptions.partitions =
-        Partitioning.getFilePartitions(jsonOptions.filePaths).toArray
-      return SchemaInference.inferUsingStart(jsonOptions)
+        Partitioning.getFilePartitions(jsonOptions.filePaths, jsonOptions).toArray
+      val schema = SchemaInference.inferUsingStart(jsonOptions)
+      val t1 = System.nanoTime()
+      System.err.println("Job -1 finished: collect at SchemaInference.scala:352, took " + (t1-t0)*scala.math.pow(10,-9) + " s")
+      return schema
     }
   }
 
 
+  override def supportsExternalMetadata() : Boolean = {
+    return true // makes it possible to accept user provided schema
+  }
   
   override def getTable(
       schema: StructType,
