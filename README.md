@@ -6,6 +6,25 @@
 ## Example one with speculating partitioner and efficient schema builder
 `spark-submit --master local --class edu.ucr.cs.bdlab.Main ./target/scala-2.12/json-stream-assembly-0.1.jar "./input/*.json" "\$.products[*]" "speculation" "SQL_FILTER_HERE_OR_EMPTY_STRING"`
 
+
+## Example usage in code
+First, make sure the classes are importable by linking the JAR file.
+
+```
+val spark =
+      SparkSession.builder().appName("spark-json-reader").getOrCreate()
+val df = spark.read
+      .format("edu.ucr.cs.bdlab.JsonSource") // name of the class or "jsondsp" if the class is registerd
+      .option("jsonPath", jsonPath)
+      .option("partitioningStrategy", "speculation") // or "fullPass"
+      .option("schemaBuilder", "speculation") // or "fullPass" in the paper (it is optimistic vs. pessimistic, will be udpated here)
+      .option("encoding", encoding) // optional: default is UTF8
+      .option("hdfsPath", hdfsPath) // root path for HDFS
+      .option("pushdown_option", pushdown_option) // the option to include pushDown "projection_filters" to push both
+      .load("path_to_data.json")
+```
+Also, refer to the file Main.scala for a full example.
+
 # Compilation
 Just use `sbt assembly`
 sbt version in this project: 1.4.3
