@@ -15,18 +15,13 @@
  */
 package edu.ucr.cs.bdlab
 
-import org.apache.spark.beast.sql.GeometryUDT
-import org.apache.spark.SparkContext
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.types._
-import scala.collection.mutable.ArrayBuffer
-import scala.util.Try
 import org.apache.hadoop.fs.FSDataInputStream
-import scala.annotation.meta.field
-import java.lang.reflect.Field
+import org.apache.spark.SparkContext
+import org.apache.spark.beast.sql.GeometryUDT
+import org.apache.spark.sql.types._
+
 import scala.collection.immutable.HashMap
-import org.apache.hadoop.util.hash.Hash
-import javax.xml.crypto.Data
+import scala.collection.mutable.ArrayBuffer
 
 object SchemaInference {
 
@@ -193,7 +188,7 @@ object SchemaInference {
     var mergedMaps = new HashMap[String, Any]()
     var count = 0
     while ((count < limit || useWhole) && found) {
-      val (_found, value, recordEncounteredTokens, newPos, _stackPos, _maxStackPos) =
+      val (_found, value, recordEncounteredTokens, newPos, _stackPos, _maxStackPos, _) =
         Parser.getNextMatch(
           reader,
           jsonOptions.encoding,
@@ -297,7 +292,7 @@ object SchemaInference {
       mergedMaps = mergedMaps.merged(schemaMap)(reduceKey)
     }
 
-    val schema =
+    var schema =
       mapToStruct(mergedMaps, nullToString = true, detectGeometry = true)
     return schema
   }

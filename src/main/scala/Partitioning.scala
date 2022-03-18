@@ -16,18 +16,14 @@
 
 package edu.ucr.cs.bdlab
 
-import org.apache.hadoop.fs.GlobFilter
-import org.apache.hadoop.fs.PathFilter
-import org.apache.hadoop.fs.{Path, FSDataInputStream, FileSystem}
-import scala.collection.mutable.ArrayBuffer
-import org.apache.hadoop.fs.FileStatus
-import org.apache.hadoop.fs.PathFilter
+import org.apache.hadoop.fs.{FileSystem, GlobFilter, Path, PathFilter}
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.types._
-import scala.util.Try
-import scala.collection.immutable.HashSet
-import scala.collection.immutable.HashMap
+
+import java.io.BufferedInputStream
+import scala.collection.immutable.{HashMap, HashSet}
+import scala.collection.mutable.ArrayBuffer
 
 object Partitioning {
 
@@ -125,6 +121,35 @@ object Partitioning {
 
     return partitions
   }
+
+//  def toNewLine(partition: JsonInputPartition,
+//              options: JsonOptions): Unit = {
+//    var start = partition.start
+//    val end = partition.end
+//    val (inputStream, fileSize) =
+//      Parser.getInputStream(partition.path, options.hdfsPath)
+//      val bufferedReader =
+//        Parser.getBufferedReader(
+//          inputStream,
+//          options.encoding,
+//          end
+//        )
+//
+//    var i = bufferedReader.read()
+//
+//    while(i != -1 && i != '\n' && i != '\r') {
+//      start += Parser.charSize(i)
+//      i = bufferedReader.read()
+//    }
+//
+//    return new JsonInputPartition(
+//      partition.path,
+//      start,
+//      partition.end,
+//      startLevel,
+//      startState
+//    )
+//  }
 
   def speculate(
       partition: JsonInputPartition,
@@ -283,7 +308,8 @@ object Partitioning {
           partition.start,
           end,
           partition.startLevel,
-          partition.dfaState
+          partition.dfaState,
+          id=i
         )
       )
       prevStart = partition.start
@@ -339,29 +365,127 @@ object Partitioning {
     }
     return (s3, s2, s2Positions)
   }
+
+
+  def skip(
+            reader: BufferedInputStream,
+            _pos: Long,
+            end: Long,
+            currentChar: Byte = 0): Long = {
+
+    val ARRAY_START : Byte = 91
+    val ARRAY_END : Byte = 93
+    val OBJECT_START : Byte = 123
+    val OBJECT_END : Byte = 125
+    val QUOTE : Byte = 34
+    val COMMA : Byte = 44
+    val ESCAPE : Byte = 92
+
+    var pos = _pos
+    var localStack = new java.util.ArrayList[Byte]()
+    var isEscaped = false
+    var isString = false
+    var countEscape = 0
+    var c = QUOTE
+    var prevC = QUOTE
+    val buf = new Array[Byte](1)
+
+    if (currentChar == 0 || currentChar == COMMA) {
+      val i = reader.read(buf, 0, 1)
+      if (i == -1) {
+        return pos
+      }
+      c = buf(0)
+      pos += 1
+    } else {
+      c = currentChar;
+    }
+    while (true) {
+      if (localStack.isEmpty && (c == COMMA || c == ARRAY_END || c == OBJECT_END)) {
+        reader.reset()
+        pos -=  1
+        return pos
+      } else if (
+        !isString &&
+          (c == OBJECT_START || c == ARRAY_START ||
+            (!isEscaped && c == QUOTE))
+      ) {
+        localStack.add(c)
+        if (c == QUOTE)
+          isString = true
+      } else if (
+        (!isString && (c == OBJECT_END || c == ARRAY_END)) ||
+          (isString && !isEscaped && c == QUOTE)
+      ) {
+        localStack.remove(localStack.size()-1)
+        if (c == QUOTE)
+          isString = false;
+        if (localStack.isEmpty) {
+          return pos
+        }
+      } else {
+        if (isString && c == ESCAPE) {
+          if (prevC == ESCAPE)
+            countEscape += 1;
+          else
+            countEscape = 1
+          if (countEscape % 2 != 0)
+            isEscaped = true
+          else
+            isEscaped = false
+        }
+      }
+
+      if (c != ESCAPE) {
+        isEscaped = false
+        countEscape = 0
+      }
+      prevC = c
+      if (pos >= end && localStack.isEmpty) {
+        return pos
+      }
+      reader.mark(1);
+      val i = reader.read(buf,0,1)
+
+      if (i == -1) {
+        return pos
+      }
+      c = buf(0)
+      pos += 1
+    }
+    return pos
+  }
+
   def getEndState(
       partition: JsonInputPartition,
       options: JsonOptions
   ): (String, Long, Long, ArrayBuffer[String], ArrayBuffer[Long], Boolean) = {
-    // TODO: this function can be implemented in a more efficient way
-    //    1- read directly from a byte stream and compare the byte values
-    //       of the special characters '{', '}', '[', and ']'
-    //    2- no need to read all keys, just read them at the end by knowing 
-    //       the positions of the remaining open curly-braces.
-    //    3- the push/pop in the array can be improved compared to the default
-    //       and the way it is currently applied
-    var syntaxStack: ArrayBuffer[String] = new ArrayBuffer[String]()
+    val ARRAY_START : Byte = 91
+    val ARRAY_END : Byte = 93
+    val OBJECT_START : Byte = 123
+    val OBJECT_END : Byte = 125
+    val QUOTE : Byte = 34
+    val COMMA : Byte = 44
+    val ESCAPE : Byte = 92
+    val SEMI_COLON : Byte = 58
+    val WHITESPACE : Array[Byte] = List[Byte](9, 10, 11, 12, 13, 32).toArray
+
+
+
+    var syntaxStack: ArrayBuffer[Byte] = new ArrayBuffer[Byte]()
     var syntaxPositions: ArrayBuffer[Long] = new ArrayBuffer[Long]()
 
     val (inputStream, fileSize) =
       Parser.getInputStream(partition.path, options.hdfsPath)
+
+
     if (partition.start == 0 && partition.end == fileSize) {
       // no need for this function for files with one partition
       return (
         partition.path,
         partition.start,
         partition.end,
-        syntaxStack,
+        new ArrayBuffer[String](),
         syntaxPositions,
         false
       )
@@ -376,9 +500,8 @@ object Partitioning {
     var stackPos: Int = -1
     var stackPosMax: Int = -1
     var append = false
-    var appendValue = ""
-    val controlChars = HashSet[String]("{", "}", "[", "]", "\"")
-
+    var appendValue : Byte = 0
+    val controlChars = HashSet[Byte](OBJECT_START, OBJECT_END, ARRAY_START, ARRAY_END, QUOTE)
 
     if(partition.start > 0) {
       val (_token, _pos) = Parser.consume(
@@ -403,88 +526,82 @@ object Partitioning {
         // use that position to determine the correct classification 
         // if start is string or not
         // reset reader to reconsider json characters
+
         bufferedReader =
           Parser.getBufferedReader(inputStream, options.encoding, pos)
       }
     }
 
+    bufferedReader.close()
+    inputStream.seek(pos)
+    val byteStream =  new BufferedInputStream(inputStream)
+    val buf : Array[Byte] = new Array[Byte](1)
+
     while (pos < partition.end) {
-      val i = bufferedReader.read()
-      val c = i.toChar;
-      pos += Parser.charSize(i)
+
+      val i = byteStream.read(buf, 0, 1)
+      val c = buf(0)
+      pos += 1
       append = false
-      if (c == '{') {
+      if (c == OBJECT_START) {
         append = true
-        appendValue = "{"
+        appendValue = OBJECT_START
         isValue = false
-      } else if (c == '[') {
+      } else if (c == ARRAY_START) {
         append = true
-        appendValue = "["
-      } else if (c == '}') {
+        appendValue = ARRAY_START
+      } else if (c == OBJECT_END) {
         if (stackPos > -1) {
-          if (!(controlChars contains syntaxStack(stackPos)) && stackPos >= 1) { // isToken
+          if (syntaxStack(stackPos) == QUOTE && stackPos >= 1) { // isToken
             stackPos -= 1
           }
-          if (syntaxStack(stackPos).equals("{")) {
+          if (syntaxStack(stackPos).equals(OBJECT_START)) {
             stackPos -= 1
           } else {
             append = true
-            appendValue = "}"
+            appendValue = OBJECT_START
           }
         } else { // empty
           append = true
-          appendValue = "}"
+          appendValue = OBJECT_END
         }
-      } else if (c == ']') {
-        if (stackPos > -1 && syntaxStack(stackPos).equals("[")) {
+      } else if (c == ARRAY_END) {
+        if (stackPos > -1 && syntaxStack(stackPos).equals(ARRAY_START)) {
           stackPos -= 1
         } else {
           append = true
-          appendValue = "]"
+          appendValue = ARRAY_END
         }
-      } else if (c == '"') {
+      } else if (c == QUOTE) {
         if (stackPos > -1) {
           if (isValue) {
-            pos = Parser.skip(
-              bufferedReader,
-              options.encoding,
+            pos = skip(
+              byteStream,
               pos,
               partition.end,
               c
             )
-          } else if (syntaxStack(stackPos).equals("{")) {
-            val (_token, _pos) = Parser.consume(
-              bufferedReader,
-              options.encoding,
-              pos,
-              partition.end,
-              c
-            )
-            token = _token.substring(1, _token.size - 1)
-            pos = _pos
+          } else if (syntaxStack(stackPos).equals(OBJECT_START)) {
             append = true
-            appendValue = token
-          } else if (!(controlChars contains syntaxStack(stackPos))) {
-            val (_token, _pos) = Parser.consume(
-              bufferedReader,
-              options.encoding,
+            appendValue = QUOTE
+          } else if (QUOTE == syntaxStack(stackPos)) {
+            val _pos = skip(
+              byteStream,
               pos,
               partition.end,
               c
             )
-            token = _token.substring(1, _token.size - 1)
-            pos = _pos
-            syntaxStack(stackPos) = "" + token // copy to new string
+            syntaxStack(stackPos) = QUOTE // copy to new string
             syntaxPositions(stackPos) = pos
+            pos = _pos
           }
         } else if (isValue) {
-          pos =
-            Parser.skip(bufferedReader, options.encoding, pos, partition.end, c)
+          pos = skip(byteStream, pos, partition.end, c)
         }
-      } else if (c == ':') {
+      } else if (c == SEMI_COLON) {
         isValue = true
       } else if (
-        c == ',' && (stackPos < 0 || !syntaxStack(stackPos).equals("["))
+        c == COMMA && (stackPos < 0 || !syntaxStack(stackPos).equals(ARRAY_START))
       ) {
         isValue = false
       }
@@ -492,7 +609,7 @@ object Partitioning {
       if (append) {
         if (stackPos < stackPosMax) {
           stackPos += 1
-          syntaxStack(stackPos) = "" + appendValue
+          syntaxStack(stackPos) = appendValue
           syntaxPositions(stackPos) = pos
         } else {
           syntaxStack.append(appendValue)
@@ -500,17 +617,50 @@ object Partitioning {
           stackPos += 1
           stackPosMax = stackPos
         }
+        if(appendValue == QUOTE) {
+          pos = skip(byteStream, pos, partition.end, QUOTE)
+        }
       }
 
     }
+
+    val finalSyntaxStack = new ArrayBuffer[String]()
+    val finalPosStack = new ArrayBuffer[Long]()
+
+    for(i <- 0 to stackPos) {
+      val v = syntaxStack(i)
+      var p = syntaxPositions(i)
+      var appendVal = ""
+      v match {
+        case OBJECT_START => appendVal = "{"
+        case OBJECT_END => appendVal = "}"
+        case ARRAY_START => appendVal = "["
+        case ARRAY_END => appendVal = "]"
+        case QUOTE => {
+          bufferedReader = Parser.getBufferedReader(inputStream, options.encoding, p)
+          val (token, _pos) = Parser.consume(bufferedReader, options.encoding, p, partition.end, '"')
+          bufferedReader.close()
+          appendVal = token.substring(1, token.length - 1)
+          p = _pos
+        }
+      }
+      finalSyntaxStack.append(appendVal)
+      finalPosStack.append(p)
+      pos = p
+    }
+
+    println("######### getEndState ############")
+    println(finalSyntaxStack)
+    println(finalPosStack)
+
     val pastEnd = pos > partition.end
 
     return (
       partition.path,
       partition.start,
       pos,
-      syntaxStack.take(stackPos + 1),
-      syntaxPositions.take(stackPos + 1),
+      finalSyntaxStack,
+      finalPosStack,
       pastEnd
     )
 
@@ -712,7 +862,7 @@ object Partitioning {
         // println(shiftedStart, _end, level, dfaState, initialState)
         val _initialState : Array[Char] = initialState.filter(x => x.size == 1).map(x => x(0).toChar).toArray
         finalPartitions.append(
-          (new JsonInputPartition(path, shiftedStart, _end, level, dfaState, _initialState))
+          (new JsonInputPartition(path, shiftedStart, _end, level, dfaState, _initialState, i))
             .asInstanceOf[InputPartition]
         )
 

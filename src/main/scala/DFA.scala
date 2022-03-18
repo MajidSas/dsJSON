@@ -16,15 +16,13 @@
 
 package edu.ucr.cs.bdlab
 
+import scala.collection.mutable.ArrayBuffer
+
 
 class State(val stateType: String,
             val value: String,
-            var skip: Int, // for array indexing (not used)
-            var accept: Int
-            // TODO: add value for the size of stack prior to moving to this state
-            //       and modify toNextState accordingly
-          )
-{
+          ) {
+  var level: Int = 0;
 
   override def toString : String = {
     if(stateType.equals("array")) {
@@ -41,50 +39,49 @@ class State(val stateType: String,
 }
 
 class DFA() {
-  var states = scala.collection.mutable.ArrayBuffer[State]()
-  var tokens = scala.collection.mutable.ArrayBuffer[(String,Int)]()
+  var states = new Array[State](0)
+  var tokens = new Array[(String,Int)](0)
   var currentState = 0
 
-  def this(pathTokens: scala.collection.mutable.ArrayBuffer[String]) {
+  def this(pathTokens: Array[String]) {
     this()
     var i = 0;
+    val states = new ArrayBuffer[State](pathTokens.length)
+    val tokens = new ArrayBuffer[(String, Int)](pathTokens.length)
     while (i < pathTokens.length) {
-      var token = pathTokens(i)
-      if(token.equals("[")) {
-        this.states.append(new State("array", ",", 0, 1))
-        i+=1
-      } else if(token.equals("..")) {
-        this.states.append(new State("descendant", pathTokens(i+1), 0, 1))
-        i+=2
+      val token = pathTokens(i)
+      if(token.equals("$")) {
+        states.append(new State("token", token.toString))
+      } else if(token.equals("[*]")) {
+        states.append(new State("array", ","))
+      } else if(token.startsWith("..")) {
+        states.append(new State("descendant", pathTokens(i).substring(2)))
       } else {
-        this.states.append(new State("token", token.toString, 0 , 1))
-        this.tokens.append((token.toString, states.size))
-        i+=1
+        states.append(new State("token", token.toString))
+        tokens.append((token, states.size))
       }
+      i+=2
     }
+    this.states = states.toArray
+    this.tokens = tokens.toArray
   }
 
-  def getStates()  : scala.collection.mutable.ArrayBuffer[State] = {
+  def getStates()  : Array[State] = {
     states
   }
 
-  def getTokens() : scala.collection.mutable.ArrayBuffer[String] = {
-    var _tokens = scala.collection.mutable.ArrayBuffer[String]()
-    for(elem <- tokens){
-      _tokens.append(elem._1)
-    }
-    _tokens
+  def getTokens() : Array[String] = {
+    tokens.map(t => t._1)
   }
 
-  def getTokenStates(token : String) : scala.collection.mutable.ArrayBuffer[Int] = {
-    var tokenStates = scala.collection.mutable.ArrayBuffer[Int]()
+  def getTokenStates(token : String) : Array[Int] = {
+    val tokenStates = ArrayBuffer[Int]()
     for(elem <- tokens){
       if(elem._1.equals(token)){
         tokenStates.append(elem._2)
       }
     }
-
-    tokenStates
+    tokenStates.toArray
   }
 
   def setState(stateId: Int) {
@@ -93,27 +90,31 @@ class DFA() {
   def toNextState() {
     currentState = currentState+1
   }
-  def toNextStateIfArray() : Boolean = {
+  def toNextStateIfArray(level : Int) : Boolean = {
     if(currentState < states.size) {
       if(states(currentState).stateType.equals("array")){
         currentState = currentState+1
+        states(currentState).level = level
         return true
       }
     }
     return false
   }
-  def toPrevState() {
-    // if(states(currentState).stateType.equals("descendant")) {
-    //   if(currentState+1 == level) {
-    //     currentState = currentState-1
-    //   }
-    // }
-    // else {
+  def toPrevState(level : Int) {
+    if(states(currentState-1).level == level) {
       currentState = currentState-1
-    // }
+    }
   }
   def getCurrentState() : Int = {
     currentState
+  }
+
+  def getPrevStateLevel() : Int = {
+    if(currentState == 0) {
+      return -1
+    } else {
+      states(currentState-1).level
+    }
   }
 
   def checkToken(input : String, level : Int) : String = {
@@ -121,21 +122,24 @@ class DFA() {
     // input.equals(states(currentState).value), 
     // currentState == states.size))
     if(states(currentState).stateType.equals("descendant")) {
-      if(level >= currentState+1 && input.equals(states(currentState).value)) {
-        toNextState()
-        if(currentState == states.size) {
-          currentState -= 1
-          return "accept"
-        }
-      }
-      return "continue"
-    } else {
-      if(level == currentState+1 && input.equals(states(currentState).value)){
+      if(level > states(currentState).level && input.equals(states(currentState).value)) {
         toNextState()
         if(currentState == states.size) {
           currentState -= 1
           return "accept"
         } else {
+          states(currentState).level = level
+        }
+      }
+      return "continue"
+    } else {
+      if(level == states(currentState).level+1 && input.equals(states(currentState).value)){
+        toNextState()
+        if(currentState == states.size) {
+          currentState -= 1
+          return "accept"
+        } else {
+          states(currentState).level = level
           return "continue"
         }
       }

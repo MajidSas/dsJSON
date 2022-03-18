@@ -39,6 +39,8 @@ class JsonOptions() extends Serializable {
   var recursive = "" 
   var partitioningStrategy = "speculation" // or "fullPass"
   var schemaBuilder = "start" // or "fullPass"
+  var extraFields = false // adds additional string column to store attributes not in schema
+  var keepIndex = false
   var encoding = "UTF-8"
   var hdfsPath = "local"
   var encounteredTokens: HashMap[String, Set[(Int,Int,Int)]] = _
@@ -57,6 +59,11 @@ class JsonOptions() extends Serializable {
         this.partitioningStrategy = options.get("partitioningStrategy")
     if(options.get("schemaBuilder") != null)
         this.schemaBuilder = options.get("schemaBuilder")
+    if(options.get("extraFields") != null)
+      this.extraFields = if(options.get("extraFields") == "true") { true } else { false }
+    if(options.get("keepIndex") != null) {
+      this.keepIndex =  if(options.get("keepIndex") == "true") { true } else { false }
+    }
     if(options.get("encoding") != null)
       this.encoding = options.get("encoding")
     if(options.get("hdfsPath") != null)

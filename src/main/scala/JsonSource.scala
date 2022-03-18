@@ -16,21 +16,13 @@
 
 package edu.ucr.cs.bdlab
 
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.connector.catalog.TableProvider
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.util.CaseInsensitiveStringMap
-import java.{util => ju}
-import org.apache.spark.sql.connector.catalog.Table
+import org.apache.spark.sql.connector.catalog.{Table, TableProvider}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.sources.DataSourceRegister
 import org.apache.spark.sql.types._
-import scala.collection.mutable.ArrayBuffer
-import scala.util.Try
+import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
-import org.apache.hadoop.fs.FSDataInputStream
-import scala.annotation.meta.field
-import java.lang.reflect.Field
+import java.{util => ju}
 
 class JsonSource extends TableProvider with DataSourceRegister {
   var jsonOptions: JsonOptions = null
@@ -47,22 +39,29 @@ class JsonSource extends TableProvider with DataSourceRegister {
     // TODO: update if statements to handle all possible four choice
     // we only considered two scenarios, but it should work for any choices 
     println("schemaBuilder: " + jsonOptions.schemaBuilder)
+    var schema : StructType = null
     if (jsonOptions.schemaBuilder.equals("fullPass")) {
       println("Creating partitions with a full pass ...")
       jsonOptions.partitions = Partitioning.fullPass(jsonOptions)
       println("Inferring schema using whole data...")
-      val schema = SchemaInference.fullInference(jsonOptions)
-      return schema
+      schema = SchemaInference.fullInference(jsonOptions)
     } else {
       println("Inferring schema using start of file...")
       val t0 = System.nanoTime()
       jsonOptions.partitions =
         Partitioning.getFilePartitions(jsonOptions.filePaths, jsonOptions).toArray
-      val schema = SchemaInference.inferUsingStart(jsonOptions)
+      schema = SchemaInference.inferUsingStart(jsonOptions)
       val t1 = System.nanoTime()
       System.err.println("Job -1 finished: collect at SchemaInference.scala:352, took " + (t1-t0)*scala.math.pow(10,-9) + " s")
-      return schema
     }
+    if(jsonOptions.extraFields) {
+      schema = schema.add(StructField("extra_fields", StringType, true))
+    }
+    if(jsonOptions.keepIndex) {
+      schema = schema.add(StructField("partition_id", LongType, true))
+      schema = schema.add(StructField("partition_row_index", LongType, true))
+    }
+    schema
   }
 
 

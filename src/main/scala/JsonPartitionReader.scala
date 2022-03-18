@@ -16,20 +16,16 @@
 
 package edu.ucr.cs.bdlab
 
-import org.apache.spark.sql.connector.read.{PartitionReader}
-import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.hadoop.fs.FSDataInputStream
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
-import com.fasterxml.jackson.module.scala.deser.overrides
-import org.apache.hadoop.fs.FSDataInputStream
-import java.io.BufferedReader
-import scala.collection.mutable.ArrayBuffer
-
 import org.apache.spark.sql.catalyst.util._
-import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.sources.Filter
+
+import java.io.BufferedReader
 import scala.collection.immutable.HashMap
+import scala.collection.mutable.ArrayBuffer
 
 
 class JsonPartitionReader extends PartitionReader[InternalRow] {
@@ -42,7 +38,10 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
   var pos = 0L
   var stream: FSDataInputStream = _
   var reader: BufferedReader = _
-  var count = 0L
+  var count : Long = -1L
+  var partitionId : Int = 0
+  var keepExtras = false
+  var keepIndex = false
   var key: String = ""
   var value: Any = null
   var fileSize: Long = 0L;
@@ -68,6 +67,9 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
     // Initialize partition
     start = inputPartition.start
     end = inputPartition.end
+    partitionId = inputPartition.id
+    keepExtras = options.extraFields
+    keepIndex = options.keepIndex
     val startLevel = inputPartition.startLevel
     // ^ these values have already been set in previous stages
     val (_stream, _fileSize) = Parser.getInputStream(filePath, options.hdfsPath)
@@ -99,7 +101,7 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
 
   override def next() = {
 
-    val (hasNext, _value, _, newPos, _stackPos, _maxStackPos) = Parser.getNextMatch(
+    val (hasNext, _value, _, newPos, _stackPos, _maxStackPos, __count) = Parser.getNextMatch(
       reader,
       options.encoding,
       start,
@@ -112,16 +114,19 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       rowMap = options.rowMap,
       filterVariables = filterVariables,
       filterSize = filterSize,
+      keepExtras=keepExtras,
+      keepIndex=keepIndex,
+      partitionId=partitionId,
+      _count=count
     )
     pos = newPos
     stackPos = _stackPos
     maxStackPos = _maxStackPos
-    // count += 1
+    count = __count
     // if(hasNext == false || value == null) {
     //     println(hasNext + " start: " + start + " pos: " + pos + " end: " + end + " count: " + count)
     // }
     value = _value
-    
     hasNext
   }
 

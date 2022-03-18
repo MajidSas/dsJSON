@@ -15,19 +15,15 @@
  */
 
 package edu.ucr.cs.bdlab
-import org.apache.spark.sql.types._
-
-import org.apache.hadoop.conf.Configuration
-import org.apache.spark.rdd.RDD
-import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.sql.{SparkSession}
-import org.apache.spark.sql.types.UDTRegistration
 import org.apache.spark.beast.SparkSQLRegistration
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 object Main {
   def main(args: Array[String]): Unit = {
     val (count, hdfsPath, input, jsonPath, partitioningStrategy, sqlFilter) = (args(0), args(1), args(2), args(3), args(4), args(5))
+    val extraFields = if (args.length > 6 && args(6) == "extraFields" || args.length > 7 && args(7) == "extraFields") { true } else { false }
+    val keepIndex = if(args.length > 6 && args(6) == "keepIndex" || args.length > 7 && args(7) == "keepIndex" ) { true } else { false }
     val spark =
       SparkSession.builder().appName("jsondsp").getOrCreate()
       
@@ -42,6 +38,8 @@ object Main {
       jsonPath,
       partitioningStrategy,
       schemaBuilder,
+      extraFields,
+      keepIndex,
       encoding,
       hdfsPath,
     )
@@ -58,8 +56,9 @@ object Main {
         "###########################\n\n\nFOUND RECORDS: " +
         sqlDF.count().toString() + "\n\n\n###########################"
       )
+//      println(sqlDF.take(2).toString)
     } else {
-      sqlDF.foreach(row => {})
+      sqlDF.take(2).foreach(row => {println(row.toString())})
     }
   }
 }
@@ -72,6 +71,8 @@ object JsonStream {
       jsonPath: String,
       partitioningStrategy: String,
       schemaBuilder: String,
+      extraFields: Boolean,
+      keepIndex: Boolean,
       encoding: String,
       hdfsPath: String = "local",
   ): DataFrame = {
@@ -87,6 +88,8 @@ object JsonStream {
       .option("recursiveFileLookup", recursive.toString())
       .option("partitioningStrategy", partitioningStrategy)
       .option("schemaBuilder", schemaBuilder)
+      .option("extraFields", extraFields.toString())
+      .option("keepIndex", keepIndex.toString())
       .option("encoding", encoding)
       .option("hdfsPath", hdfsPath)
       .load(input)

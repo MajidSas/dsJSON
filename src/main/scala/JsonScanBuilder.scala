@@ -16,18 +16,14 @@
 
 package edu.ucr.cs.bdlab
 
-import org.apache.spark.sql.connector.read.ScanBuilder
-import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.connector.read.SupportsPushDownFilters
-import org.apache.spark.sql.connector.read.SupportsPushDownRequiredColumns
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.util.CaseInsensitiveStringMap
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.catalyst.StructFilters
-import org.apache.spark.sql.types._
-import scala.collection.immutable.HashMap
 import org.apache.spark.beast.sql.GeometryUDT
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.StructFilters
+import org.apache.spark.sql.connector.read.{Scan, ScanBuilder, SupportsPushDownFilters, SupportsPushDownRequiredColumns}
+import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.types._
+
+import scala.collection.immutable.HashMap
 
 class JsonScanBuilder(val schema : StructType, val options :  JsonOptions) extends ScanBuilder  with SupportsPushDownFilters with SupportsPushDownRequiredColumns {
     private var _requiredSchema: StructType = null
@@ -73,10 +69,14 @@ class JsonScanBuilder(val schema : StructType, val options :  JsonOptions) exten
           if(!(existingNames contains key))
           _requiredSchema = _requiredSchema.add(schema.apply(key))
         }
-        options.rowMap = schemaToRowMap(_requiredSchema)
 
-        
-        println(_requiredSchema)
+
+
+      options.rowMap = schemaToRowMap(_requiredSchema)
+
+
+
+      println(_requiredSchema)
         println(options.rowMap)
         println(filterString)
         return new JsonScan(_requiredSchema, options)

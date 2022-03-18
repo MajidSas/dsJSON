@@ -304,6 +304,25 @@ object Parser {
 
   }
 
+  def finalizeValue(value : Any, keepIndex: Boolean, partitionId:Long, count:Long, rowMap: HashMap[String, (Int, DataType, Any)]): InternalRow = {
+    val (partitionIdIndex, _, _) = if(rowMap contains "partition_id") {rowMap("partition_id")} else {(-1, null, null)}
+    val (rowIndex, _, _) = if(rowMap contains "partition_row_index") {rowMap("partition_row_index")} else {(-1, null, null)}
+
+    value match {
+      case arr: Array[Any] =>
+        if(partitionIdIndex > -1) {
+          arr(partitionIdIndex) = partitionId
+          arr(rowIndex) = count
+        }
+        InternalRow.fromSeq(arr.toSeq)
+      case _ =>
+        if (partitionIdIndex > -1) {
+          InternalRow.fromSeq(Seq(value, partitionId, count))
+        } else {
+          InternalRow.fromSeq(Seq(value))
+        }
+    }
+  }
   def getNextMatch(
       reader: BufferedReader,
       encoding: String,
@@ -319,23 +338,21 @@ object Parser {
       rowMap: HashMap[String, (Int, DataType, Any)] = null,
       filterVariables: HashMap[String, Variable] =
         new HashMap[String, Variable],
-      filterSize: Int = -1
-  ): (Boolean, Any, HashMap[String, Set[(Int, Int, Int)]], Long, Int, Int) = {
+      filterSize: Int = -1,
+      keepExtras : Boolean = false,
+      keepIndex : Boolean = false,
+      partitionId : Long = 0L,
+      _count: Long = 0L
+  ): (Boolean, Any, HashMap[String, Set[(Int, Int, Int)]], Long, Int, Int, Long) = {
 
-    // TODO:  - add support for multiple JSONPath queries,
-    //        Just pass the input to multiple DFA and store merged values
-    //        and merge appropriately. This means the return calls should be modified
-    //        and only used when filters are evaluated.
-    //  - add support for filters at higher levels
-    //  for each encountered key at each level, just check it exists in the filter variable,
-    //  and propagate it to the tree. Need to ensure all names are unique (e.g. add path suffix to variable names)
     var stackPos = __stackPos
     var maxStackPos = __maxStackPos
+    var count = _count
     var encounteredTokens = HashMap[String, Set[(Int, Int, Int)]]()
     var pos = _pos
     while (true) {
       if (pos+1 >= end) {
-        return (false, null, encounteredTokens, pos, stackPos, maxStackPos)
+        return (false, null, encounteredTokens, pos, stackPos, maxStackPos, count)
       }
       val i = reader.read()
       val c = i.toChar;
@@ -351,9 +368,9 @@ object Parser {
         if (getTypes) {
           val (value, _p) = parseType(reader, encoding, pos, end, c)
           pos = _p
-          return (true, value, encounteredTokens, pos, stackPos, maxStackPos)
+          return (true, value, encounteredTokens, pos, stackPos, maxStackPos, count)
         } else {
-          val (value, _p, skipRow) = _parse(
+          val (_value, _p, skipRow) = _parse(
             reader,
             encoding,
             pos,
@@ -364,9 +381,12 @@ object Parser {
             filterSize,
             c
           )
+
           pos = _p
+          count+=1
           if (!skipRow) {
-            return (true, value, encounteredTokens, pos, stackPos, maxStackPos)
+            val value = finalizeValue(_value, keepIndex, partitionId, count, rowMap)
+            return (true, value, encounteredTokens, pos, stackPos, maxStackPos, count)
           }
         }
       } else if (c == '{') {
@@ -375,7 +395,7 @@ object Parser {
         maxStackPos = _maxStackPos
       } else if (c == '[') {
         
-        if (!dfa.toNextStateIfArray() &&
+        if (!dfa.toNextStateIfArray(stackPos+1) &&
             !dfa.states(dfa.currentState).stateType.equals("descendant")) {
           pos = skip(reader, encoding, pos, end, c)
         } else {
@@ -386,10 +406,10 @@ object Parser {
       } else if ((c == '}' || c == ']')) {
         // TODO handle error if pop is not equal to c
         // or if stack is empty (i.e. invalid initialization, or malformed input)
-        if (stackPos+1 == dfa.getCurrentState()) {
-          dfa.toPrevState();
-        }
         stackPos-=1
+        if (stackPos+1 == dfa.getPrevStateLevel()) {
+          dfa.toPrevState(stackPos+1);
+        }
       } else if (c == '"') {
         // get token
         val (value, _p) = consume(reader, encoding, pos, end, c)
@@ -423,9 +443,9 @@ object Parser {
             if (getTypes) {
               val (value, _p) = parseType(reader, encoding, pos, end)
               pos = _p
-              return (true, value, encounteredTokens, pos, stackPos, maxStackPos)
+              return (true, value, encounteredTokens, pos, stackPos, maxStackPos, count)
             } else {
-              val (value, _p, skipRow) = _parse(
+              val (_value, _p, skipRow) = _parse(
                 reader,
                 encoding,
                 pos,
@@ -436,8 +456,10 @@ object Parser {
                 filterSize
               )
               pos = _p
+              count += 1
               if (!skipRow) {
-                return (true, value, encounteredTokens, pos, stackPos, maxStackPos)
+                val value = finalizeValue(_value, keepIndex, partitionId, count, rowMap)
+                return (true, value, encounteredTokens, pos, stackPos, maxStackPos, count)
               }
             }
           } else if (dfaResponse.equals("reject")) {
@@ -463,7 +485,7 @@ object Parser {
         }
       }
     }
-    return (false, null, encounteredTokens, pos, stackPos, maxStackPos)
+    return (false, null, encounteredTokens, pos, stackPos, maxStackPos, count)
   }
 
   def consume(
@@ -703,26 +725,24 @@ object Parser {
             subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]],
             dataType
           )
-          return (InternalRow.fromSeq(Seq(arr)), newPos, false)
+          return (arr, newPos, false)
         }
         case '"' => {
           val (str, newPos) = consume(reader, encoding, pos, end, c)
           if (dataType.isInstanceOf[StringType]) {
             return (
-              InternalRow.fromSeq(
-                Seq(UTF8String.fromString(str.substring(1, str.length - 1)))
-              ),
+                UTF8String.fromString(str.substring(1, str.length - 1)),
               newPos,
               false
             )
           } else {
-            return (InternalRow.fromSeq(Seq(null)), newPos, false)
+            return (null, newPos, false)
           }
         }
         case 'n' => {
           reader.skip(3)
           return (
-            InternalRow.fromSeq(Seq(null)),
+            null,
             pos + stringSize("ull", encoding),
             false
           )
@@ -730,7 +750,7 @@ object Parser {
         case 'f' => {
           reader.skip(4)
           return (
-            InternalRow.fromSeq(Seq(false)),
+            false,
             pos + stringSize("alse", encoding),
             false
           )
@@ -738,7 +758,7 @@ object Parser {
         case 't' => {
           reader.skip(3)
           return (
-            InternalRow.fromSeq(Seq(true)),
+            true,
             pos + stringSize("rue", encoding),
             false
           )
@@ -746,15 +766,15 @@ object Parser {
         case numRegExp() => {
           val (str, newPos) = _getNum(reader, encoding, pos, end, c)
           if (dataType.isInstanceOf[DoubleType]) {
-            return (InternalRow.fromSeq(Seq(str.toDouble)), newPos, false)
+            return (str.toDouble, newPos, false)
           } else if (dataType.isInstanceOf[LongType]){
-            return (InternalRow.fromSeq(Seq(str.toLong)), newPos, false)
+            return (str.toLong, newPos, false)
           } else if (dataType.isInstanceOf[StringType]) {
             // may happen if schema inferred to null and we replaced nulls
             // with strings (in case of speculation)
-            return (InternalRow.fromSeq(Seq(UTF8String.fromString(str))), newPos, false)
+            return (UTF8String.fromString(str), newPos, false)
           } else {
-            return (InternalRow.fromSeq(Seq(null)), newPos, false)
+            return (null, newPos, false)
           }
         }
         case _ => {} // these are skipped (e.g. whitespace)
@@ -780,7 +800,7 @@ object Parser {
       filterVariables: HashMap[String, Variable] =
         new HashMap[String, Variable],
       filterSize: Int = -1
-  ): (InternalRow, Long, Boolean) = {
+  ): (Any, Long, Boolean) = {
     // TODO: - re-implemented to avoid recursion for nested objects (would make code even less readable)
     //       - update record initalization to something more efficient
     //          here first it allocates a memory block, and then adds references
@@ -790,6 +810,9 @@ object Parser {
     val predicateValues = if (filterSize > 0) { new Array[Any](filterSize) }
     else { new Array[Any](1) }
     var rowCounter = 0
+    if(rowMap contains "partition_id") {
+      rowCounter += 2
+    }
     var isKey = true
     var key = ""
 
@@ -797,7 +820,10 @@ object Parser {
     while (true) { // parse until full object or end of file
       if (rowCounter == rowMap.size) {
         pos = skip(reader, encoding, pos, end, '{')
-        return (InternalRow.fromSeq(rowSequence.toSeq), pos, false)
+        if(parentKey == "")
+          return (rowSequence, pos, false)
+        else
+          return (InternalRow.fromSeq(rowSequence.toSeq), pos, false)
       }
       val i = reader.read()
       if (i == -1) {
@@ -933,7 +959,10 @@ object Parser {
           reader.skip(3)
         }
         case '}' => {
-          return (InternalRow.fromSeq(rowSequence.toSeq), pos, false)
+          if(parentKey == "")
+            return (rowSequence, pos, false)
+          else
+            return (InternalRow.fromSeq(rowSequence.toSeq), pos, false)
           // return (row, pos, false)
         }
         case _ => {} // skip character
