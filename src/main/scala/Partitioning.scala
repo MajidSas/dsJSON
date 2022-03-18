@@ -683,15 +683,9 @@ object Partitioning {
       var response = ""
       val elem = state(i)
       if (elem.equals("[")) {
-        if (dfa.toNextStateIfArray() ||
+        if (dfa.toNextStateIfArray(level) ||
           dfa.states(dfa.currentState).stateType.equals("descendant")) {
-          response = dfa.checkArray()
-          if (response.equals("accept") || response.equals("continue")) {
-            level += 1
-          } else {
-            response = "reject"
-            i -= 1
-          }
+          level += 1
         }
       } else if (elem.equals("{")) {
         level += 1

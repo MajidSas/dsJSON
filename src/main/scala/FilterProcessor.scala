@@ -677,4 +677,28 @@ object FilterProcessor {
     }
     return (null, variables, newIndex)
   }
+
+  def extractVariables(s : String) : Array[String] = {
+    var l = List[String]()
+    var variable = ""
+    var count = 0
+    for(c <- s) {
+      if(c == '@') {
+        count = 1
+      } else if(c == '.' && count == 1) {
+        count = 2
+      } else if(count == 2 && "&|<>=!~ \t\n\r".contains(c)){
+        count = 0
+        l = l ++ List(variable)
+        variable = ""
+      } else if(count == 2) {
+        variable += c
+      }
+
+    }
+    if(variable != "") {
+      l = l ++ List(variable)
+    }
+    l.toArray
+  }
 }

@@ -357,13 +357,10 @@ object Parser {
       val i = reader.read()
       val c = i.toChar;
       pos += charSize(i)
-
       if (isWhiteSpace(c)) {
         // SKIP
       } else if (
-        stackPos+1 == dfa.states.size && dfa
-          .checkArray()
-          .equals("accept") && c != ']' && c != '}'
+        (c == ',' || c == '{') && dfa.checkArray()
       ) {
         if (getTypes) {
           val (value, _p) = parseType(reader, encoding, pos, end, c)
@@ -393,6 +390,9 @@ object Parser {
         val (_stackPos, _maxStackPos) : (Int, Int) = appendToStack(syntaxStackArray, c, stackPos, maxStackPos)
         stackPos = _stackPos
         maxStackPos = _maxStackPos
+        if(dfa.currentState == 0 && dfa.states(0).value == "$") {
+          dfa.toNextState()
+        }
       } else if (c == '[') {
         
         if (!dfa.toNextStateIfArray(stackPos+1) &&
@@ -403,6 +403,7 @@ object Parser {
         stackPos = _stackPos
         maxStackPos = _maxStackPos
         }
+
       } else if ((c == '}' || c == ']')) {
         // TODO handle error if pop is not equal to c
         // or if stack is empty (i.e. invalid initialization, or malformed input)
@@ -410,6 +411,7 @@ object Parser {
         if (stackPos+1 == dfa.getPrevStateLevel()) {
           dfa.toPrevState(stackPos+1);
         }
+
       } else if (c == '"') {
         // get token
         val (value, _p) = consume(reader, encoding, pos, end, c)
@@ -439,6 +441,7 @@ object Parser {
           // 2. check if filter is evaluated to false
           // 3. call skip function and discard of stored values appropriately
           val dfaResponse = dfa.checkToken(token, stackPos+1)
+
           if (dfaResponse.equals("accept")) {
             if (getTypes) {
               val (value, _p) = parseType(reader, encoding, pos, end)

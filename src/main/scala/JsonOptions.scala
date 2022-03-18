@@ -48,6 +48,7 @@ class JsonOptions() extends Serializable {
   var filePaths : Seq[String] = _
   var partitions : Array[InputPartition] = _
   var rowMap: HashMap[String, (Int, DataType, Any)] = _
+  var projectionTree: HashMap[String, (Boolean, HashMap[String,Variable], HashMap[String,(Int,DataType,Any)], Any, Any)] = _
   def init(options : CaseInsensitiveStringMap) {
     this.filepath = options.get("path")
     this.jsonpath = options.get("jsonpath")
@@ -70,15 +71,18 @@ class JsonOptions() extends Serializable {
       this.hdfsPath  = options.get("hdfsPath")
   }
   def getDFA(): DFA = {
-    val (pathTokens, pathFilters) = PathProcessor.build(this.jsonpath);
+    val (pathTokens, _projectionTree) = PathProcessor.build(this.jsonpath);
     var dfa = new DFA(pathTokens)
+    projectionTree = _projectionTree
 
-    if(filterString == "") {
-      // TODO: update to keep filters at all levels (i.e. make it an array)
-      // TODO: also not necessarily an array
-      filterString = if(dfa.states.last.stateType == "array" && pathFilters.size > 0) {
-        "(" + pathFilters.last + ")" } else { "" }
-    } 
+    println("projection tree")
+    println(projectionTree)
+//    if(filterString == "") {
+//      // TODO: update to keep filters at all levels (i.e. make it an array)
+//      // TODO: also not necessarily an array
+//      filterString = if(dfa.states.last.stateType == "array" && pathFilters.size > 0) {
+//        "(" + pathFilters.last + ")" } else { "" }
+//    }
     return dfa
   }
 
@@ -86,17 +90,17 @@ class JsonOptions() extends Serializable {
     // TODO: update to keep filters in all levels
     // use an array of strings, but the sql fitler would only be added to the last one
     // or kept seperatly and added later as a subtree of its own
-    val (pathTokens, pathFilters) = PathProcessor.build(this.jsonpath);
-    var dfa = new DFA(pathTokens)
-    filterString = if(dfa.states.last.stateType == "array" && pathFilters.size > 0) {
-      "(" + pathFilters.last + ")"
-    } else { "" }
-
-    if(sqlFilter.trim() != "" && filterString != "") {
-      filterString += " && "
-    }
-    if(sqlFilter.trim() != "")
-    filterString += "(" + sqlFilter + ")"
+//    val (pathTokens, pathFilters) = PathProcessor.build(this.jsonpath);
+//    var dfa = new DFA(pathTokens)
+//    filterString = if(dfa.states.last.stateType == "array" && pathFilters.size > 0) {
+//      "(" + pathFilters.last + ")"
+//    } else { "" }
+//
+//    if(sqlFilter.trim() != "" && filterString != "") {
+//      filterString += " && "
+//    }
+//    if(sqlFilter.trim() != "")
+//    filterString += "(" + sqlFilter + ")"
   }
 
 }

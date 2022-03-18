@@ -56,11 +56,13 @@ class DFA() {
         states.append(new State("array", ","))
       } else if(token.startsWith("..")) {
         states.append(new State("descendant", pathTokens(i).substring(2)))
+      }  else if(token.startsWith(".")) {
+        states.append(new State("token", pathTokens(i).substring(1)))
       } else {
         states.append(new State("token", token.toString))
         tokens.append((token, states.size))
       }
-      i+=2
+      i+=1
     }
     this.states = states.toArray
     this.tokens = tokens.toArray
@@ -93,8 +95,8 @@ class DFA() {
   def toNextStateIfArray(level : Int) : Boolean = {
     if(currentState < states.size) {
       if(states(currentState).stateType.equals("array")){
-        currentState = currentState+1
         states(currentState).level = level
+        currentState = currentState+1
         return true
       }
     }
@@ -118,8 +120,8 @@ class DFA() {
   }
 
   def checkToken(input : String, level : Int) : String = {
-    // println((input, level, states(currentState).stateType.equals("descendant"), 
-    // input.equals(states(currentState).value), 
+    // println((input, level, states(currentState).stateType.equals("descendant"),
+    // input.equals(states(currentState).value),
     // currentState == states.size))
     if(states(currentState).stateType.equals("descendant")) {
       if(level > states(currentState).level && input.equals(states(currentState).value)) {
@@ -147,13 +149,13 @@ class DFA() {
     }
   }
 
-  def checkArray() : String = {
+  def checkArray() : Boolean = {
     if(currentState == states.size){
       if(states(currentState-1).stateType.equals("array")) {
-        return "accept"
+        return true
       }
     }
-    "continue"
+    false
   }
 
   override def toString = {

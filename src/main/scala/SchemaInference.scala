@@ -202,6 +202,7 @@ object SchemaInference {
           getTokens,
           true // parse type
         )
+//      println(value)
       found = _found
       stackPos = _stackPos
       maxStackPos = _maxStackPos

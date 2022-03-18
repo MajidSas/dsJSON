@@ -15,7 +15,9 @@
  */
 
 package edu.ucr.cs.bdlab
-import scala.collection.mutable.{ArrayBuffer, HashMap}
+import scala.collection.immutable.HashMap
+import scala.collection.mutable.ArrayBuffer
+import org.apache.spark.sql.types._
 
 object PathProcessor {
   def findMatchingBracket(str : String, isSquare : Boolean = false) : Int = {
@@ -128,14 +130,45 @@ object PathProcessor {
     path.toArray
   }
 
-  def build(_queries: String) : (Array[String], HashMap[String,(Boolean, String, Any, Any)]) = {
+  def convertToProjectionTree(queryMap : HashMap[String, (Boolean, String, Any, Any)], isRoot : Boolean = false): HashMap[String, (Boolean, HashMap[String, Variable], HashMap[String, (Int, DataType, Any)], Any, Any)] = {
+    var newMap = new HashMap [String, (Boolean, HashMap[String, Variable], HashMap[String, (Int, DataType, Any)], Any, Any)]()
+    for((_k,v) <- queryMap) {
+      val k = if(isRoot) { "*" } else { _k }
+      val acceptAll = v._1
+
+      val filter = v._2
+      var rowMap = new HashMap[String, (Int, DataType, Any)]()
+      val filterVariables = if(filter == "") { new HashMap[String, Variable]() } else {
+        val filterVariableNames = FilterProcessor.extractVariables(filter)
+        for(i <- 0 until filterVariableNames.size) {
+          rowMap = rowMap + (filterVariableNames(i) -> (i, null, null))
+        }
+        FilterProcessor.parseExpr(filter, rowMap)._2
+      }
+
+
+      val subTree1 = if(v._3 == null) { null } else { convertToProjectionTree(new HashMap[String, (Boolean, String, Any, Any)]()++v._3.asInstanceOf[scala.collection.mutable.HashMap[String,(Boolean, String, Any, Any)]]) }
+      val subTree2 = if(v._4 == null) { null } else { convertToProjectionTree(new HashMap[String, (Boolean, String, Any, Any)]()++v._4.asInstanceOf[scala.collection.mutable.HashMap[String,(Boolean, String, Any, Any)]]) }
+
+      newMap = newMap + (k -> (acceptAll, filterVariables, rowMap, subTree1, subTree2))
+
+    }
+    newMap
+  }
+
+  def build(_queries: String) : (Array[String], HashMap[String,(Boolean, HashMap[String, Variable], HashMap[String, (Int, DataType, Any)], Any, Any)]) = {
     val queries = _queries.split(";").filter(s => s.trim().length() > 0)
     val pair = queries.map(q=>tokenize(q)).unzip
     val tokenizedQueries = pair._1
     val filters = pair._2
     val dfaQueryTokens = commonPath(tokenizedQueries, filters)
+//    tokenizedQueries.foreach(tt => {
+//      tt.foreach(t => print(t))
+//      println()
+//    })
 
-    var queryMap = new HashMap[String, (Boolean, String, Any, Any)]
+    var queryMap = new scala.collection.mutable.HashMap[String, (Boolean, String, Any, Any)]
+
     for(i <- 0 until tokenizedQueries.length) {
       var curQueryMap = queryMap
       val ts = tokenizedQueries(i)
@@ -150,7 +183,7 @@ object PathProcessor {
         } else { ts(j) }
         var filter = if(filters(i)(j) == "*") { "" } else {filters(i)(j)}
         var acceptAll = j == ts.length-1
-        var subMap = new HashMap[String, (Boolean, String, Any, Any)]()
+        var subMap = new scala.collection.mutable.HashMap[String, (Boolean, String, Any, Any)]()
         nestedList.foreach(t => {
           if(curQueryMap contains t)
             subMap(t) = curQueryMap(t)
@@ -159,17 +192,18 @@ object PathProcessor {
           val curFilter = curQueryMap(token)._2
           filter = if(curFilter == "" || filter == "") { curFilter } else { curFilter + " && " + filter }
           acceptAll =  acceptAll || curQueryMap(token)._1
-          subMap = curQueryMap(token)._3.asInstanceOf[HashMap[String,(Boolean, String, Any, Any)]]
+          subMap = curQueryMap(token)._3.asInstanceOf[scala.collection.mutable.HashMap[String,(Boolean, String, Any, Any)]]
         }
-        curQueryMap.put(token, (
+
+        curQueryMap(token)= (
           acceptAll,
           filter,
           if(!isNested) { subMap } else { null },
           if(isNested) { subMap } else { null }
-        ))
+        )
         curQueryMap = subMap
       }
     }
-    (dfaQueryTokens, queryMap)
+    (dfaQueryTokens, convertToProjectionTree(new HashMap[String, (Boolean, String, Any, Any)]() ++ queryMap, true))
   }
 }
