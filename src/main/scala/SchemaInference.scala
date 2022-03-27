@@ -15,7 +15,6 @@
  */
 package edu.ucr.cs.bdlab
 
-import org.apache.hadoop.fs.FSDataInputStream
 import org.apache.spark.SparkContext
 import org.apache.spark.beast.sql.GeometryUDT
 import org.apache.spark.sql.types._
@@ -31,15 +30,16 @@ object SchemaInference {
       schema: StructType
   ): HashMap[String, Set[(Int, Int, Int)]] = {
     // extract token levels from query, encountered tokens, and schema
-    var dfa = options.getDFA()
+    val parser = new Parser()
+    var pda = options.getPDA()
     var tokenLevels = HashMap[String, Set[(Int, Int, Int)]]()
-    var maxQueryLevel = dfa.states.length
-    for (token <- dfa.getTokens()) {
-      for (state <- dfa.getTokenStates(token)) {
-        tokenLevels = Parser.addToken(tokenLevels, token, state, state)
+    var maxQueryLevel = pda.states.length
+    for (token <- pda.getTokens()) {
+      for (state <- pda.getTokenStates(token)) {
+        tokenLevels = parser.addToken(tokenLevels, token, state, state)
       }
     }
-    return Parser.mergeMapSet(tokenLevels, options.encounteredTokens)
+    return parser.mergeMapSet(tokenLevels, options.encounteredTokens)
 
   }
 
@@ -121,7 +121,8 @@ object SchemaInference {
     } else if ((t1 == DoubleType && t2 == LongType) || (t1 == LongType && t2 == DoubleType)) {
       return DoubleType
     } else {
-      return t1
+      println("WARNING: conflicting data types will be parsed as strings (" + t1.toString + "," + t2.toString + ")")
+      return StringType
     }
   }
 
@@ -167,45 +168,34 @@ object SchemaInference {
   ): (HashMap[String, Any], HashMap[String, Set[(Int, Int, Int)]], Int) = {
     var parsedRecords = new ArrayBuffer[Any];
     var encounteredTokens = HashMap[String, Set[(Int, Int, Int)]]()
-    var dfa = jsonOptions.getDFA()
-    val (inputStream: FSDataInputStream, fileSize: Long) =
-      Parser.getInputStream(partition.path, jsonOptions.hdfsPath)
-    val end = if (partition.end == -1) { fileSize }
-    else { partition.end }
-    val reader = Parser.getBufferedReader(
-      inputStream,
+
+    val projection = jsonOptions.getProjectionTree()("*")
+
+
+    val parser : Parser = new Parser(
+      partition.path,
+      jsonOptions.hdfsPath,
       jsonOptions.encoding,
-      partition.start
+      jsonOptions.getPDA(),
+      partition.start,
+      partition.end
     )
-    dfa = jsonOptions.getDFA()
-    var syntaxStackArray = Parser.initSyntaxStack(dfa, partition.startLevel, partition.initialState)
-    var stackPos = syntaxStackArray.size-1
-    var maxStackPos = stackPos
-    dfa.setState(partition.dfaState)
-    val lastQueryToken = dfa.states.last.value
+    parser.initSyntaxStack(partition.startLevel, partition.initialState)
+    parser.pda.setState(partition.dfaState)
+    val lastQueryToken = parser.pda.states.last.value
     var pos: Long = partition.start
     var found: Boolean = true
     var mergedMaps = new HashMap[String, Any]()
     var count = 0
     while ((count < limit || useWhole) && found) {
-      val (_found, value, recordEncounteredTokens, newPos, _stackPos, _maxStackPos, _) =
-        Parser.getNextMatch(
-          reader,
-          jsonOptions.encoding,
-          partition.start,
-          end,
-          pos,
-          syntaxStackArray,
-          stackPos,
-          maxStackPos,
-          dfa,
+      val (_found, value, recordEncounteredTokens) =
+        parser.getNextMatch(
+          projection,
           getTokens,
-          true // parse type
+          true, // parse type
         )
 //      println(value)
       found = _found
-      stackPos = _stackPos
-      maxStackPos = _maxStackPos
       count += 1
       if (value != null) {
         val _value = if (value.isInstanceOf[HashMap[_, _]]) {
@@ -216,34 +206,33 @@ object SchemaInference {
         mergedMaps = mergedMaps.merged(_value)(reduceKey)
 
         encounteredTokens =
-          Parser.mergeMapSet(encounteredTokens, recordEncounteredTokens)
-        encounteredTokens = Parser.mergeMapSet(
+          parser.mergeMapSet(encounteredTokens, recordEncounteredTokens)
+        encounteredTokens = parser.mergeMapSet(
                 encounteredTokens,
-                Parser.getEncounteredTokens(
+                parser.getEncounteredTokens(
                   value,
-                  dfa.currentState,
-                  dfa.currentState
+                  parser.pda.currentState,
+                  parser.pda.currentState
                 )
               )
       }
-      pos = newPos
     }
 
-    reader.close()
-    inputStream.close()
+    parser.close()
 
     return (mergedMaps, encounteredTokens, count)
   }
   def inferUsingStart(jsonOptions: JsonOptions): StructType = {
+    val parser = new Parser()
     var encounteredTokens = HashMap[String, Set[(Int, Int, Int)]]()
     var mergedMaps = new HashMap[String, Any]()
-    var dfa = jsonOptions.getDFA()
+    var pda = jsonOptions.getPDA()
     val filePaths = jsonOptions.filePaths
     val limit = 1000
     var nParsedRecords = 0
     var i = 0
     while (nParsedRecords < limit && i < filePaths.size) {
-      val partition = new JsonInputPartition(filePaths(i), 0, -1, 0, 0)
+      val partition = new JsonInputPartition(filePaths(i), jsonOptions.hdfsPath, 0, -1, 0, 0)
       val (schemaMap, _encounteredTokens, _nParsedRecords) =
         inferOnPartition(
           partition,
@@ -255,7 +244,7 @@ object SchemaInference {
       mergedMaps = mergedMaps.merged(schemaMap)(reduceKey)
       nParsedRecords += _nParsedRecords
       encounteredTokens =
-        Parser.mergeMapSet(encounteredTokens, _encounteredTokens)
+        parser.mergeMapSet(encounteredTokens, _encounteredTokens)
       i += 1
     }
 
@@ -268,7 +257,7 @@ object SchemaInference {
   }
 
   def fullInference(jsonOptions: JsonOptions): StructType = {
-    var dfa = jsonOptions.getDFA()
+    var pda = jsonOptions.getPDA()
     val partitions = jsonOptions.partitions
     val sc = SparkContext.getOrCreate()
     val stageOutput = sc

@@ -16,42 +16,25 @@
 
 package edu.ucr.cs.bdlab
 
-import org.apache.hadoop.fs.FSDataInputStream
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.catalyst.util._
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.types._
 
-import java.io.BufferedReader
-import scala.collection.immutable.HashMap
-import scala.collection.mutable.ArrayBuffer
-
 
 class JsonPartitionReader extends PartitionReader[InternalRow] {
-  var inputPartition: JsonInputPartition = null
-  var schema: StructType = null
-  var options: JsonOptions = null
-
-  var dfa: DFA = _
-  var start, end = 0L
-  var pos = 0L
-  var stream: FSDataInputStream = _
-  var reader: BufferedReader = _
-  var count : Long = -1L
+  var inputPartition: JsonInputPartition = _
+  var schema: StructType = _
+  var options: JsonOptions = _
+  var parser : Parser = _
   var partitionId : Int = 0
   var keepExtras = false
   var keepIndex = false
   var key: String = ""
-  var value: Any = null
-  var fileSize: Long = 0L;
-  var syntaxStackArray: ArrayBuffer[Char] = ArrayBuffer[Char]()
-  var stackPos : Int = -1
-  var maxStackPos : Int = -1
-  var stateLevel = 0;
-  var splitPath: String = "";
-  var filterVariables : HashMap[String, Variable] = null
-  var filterSize : Int = 0
+  var value: Any = _
+  var projection : ProjectionNode = _
+
   def this(
       inputPartition: JsonInputPartition,
       schema: StructType,
@@ -61,20 +44,26 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
     this.schema = schema
     this.options = options
 
+    this.parser = new Parser(
+      inputPartition.path,
+      options.hdfsPath,
+      options.encoding,
+      options.getPDA(),
+      inputPartition.start,
+      inputPartition.end
+    )
+    projection = options.getProjectionTree()("*")
 
-    dfa = options.getDFA()
     val filePath = inputPartition.path
     // Initialize partition
-    start = inputPartition.start
-    end = inputPartition.end
     partitionId = inputPartition.id
     keepExtras = options.extraFields
     keepIndex = options.keepIndex
     val startLevel = inputPartition.startLevel
     // ^ these values have already been set in previous stages
-    val (_stream, _fileSize) = Parser.getInputStream(filePath, options.hdfsPath)
-    stream = _stream
-    fileSize = _fileSize
+//    val (_stream, _fileSize) = Parser.getInputStream(filePath, options.hdfsPath)
+//    stream = _stream
+//    fileSize = _fileSize
     println(
       inputPartition.start,
       inputPartition.end,
@@ -82,47 +71,29 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       inputPartition.dfaState
     )
     println("Filters: "+options.filterString)
-    val (_, _filterVariables, _filterSize) : (Any, HashMap[String, Variable], Int) =  FilterProcessor.parseExpr(options.filterString, options.rowMap)
-    filterVariables = _filterVariables
-    filterSize = _filterSize
+//    val (_, _filterVariables, _filterSize) : (Any, HashMap[String, Variable], Int) =  FilterProcessor.parseExpr(options.filterString, options.rowMap)
+//    filterVariables = _filterVariables
+//    rowMap = _rowMap
+//    childTree = _childTree
+//    descendantTree = _descendantTree
+//    filterSize = _filterSize
     // println(options.encounteredTokens)
     val initialState = inputPartition.initialState
-    syntaxStackArray = Parser.initSyntaxStack(dfa, startLevel, initialState)
-    stackPos = syntaxStackArray.size-1
-    maxStackPos = stackPos
-    dfa.setState(inputPartition.dfaState)
-
-    println(syntaxStackArray)
-    println(dfa)
-
-    reader = Parser.getBufferedReader(stream, options.encoding, start)
-    pos = start;
+    parser.initSyntaxStack(startLevel, initialState)
+    parser.pda.setState(inputPartition.dfaState)
+    println(parser.syntaxStackArray)
+    println(parser.pda)
   }
 
   override def next() = {
 
-    val (hasNext, _value, _, newPos, _stackPos, _maxStackPos, __count) = Parser.getNextMatch(
-      reader,
-      options.encoding,
-      start,
-      end,
-      pos,
-      syntaxStackArray,
-      stackPos,
-      maxStackPos,
-      dfa,
-      rowMap = options.rowMap,
-      filterVariables = filterVariables,
-      filterSize = filterSize,
-      keepExtras=keepExtras,
-      keepIndex=keepIndex,
-      partitionId=partitionId,
-      _count=count
+    val (hasNext, _value, _) = parser.getNextMatch(
+      projection,
+      false,
+      false,
+      keepExtras,
+      partitionId
     )
-    pos = newPos
-    stackPos = _stackPos
-    maxStackPos = _maxStackPos
-    count = __count
     // if(hasNext == false || value == null) {
     //     println(hasNext + " start: " + start + " pos: " + pos + " end: " + end + " count: " + count)
     // }
@@ -136,6 +107,6 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
   }
 
   override def close() {
-    reader.close()
+    parser.close()
   }
 }

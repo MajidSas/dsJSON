@@ -38,7 +38,7 @@ class State(val stateType: String,
   }
 }
 
-class DFA() {
+class PDA() {
   var states = new Array[State](0)
   var tokens = new Array[(String,Int)](0)
   var currentState = 0

@@ -16,46 +16,69 @@
 
 package edu.ucr.cs.bdlab
 
+import edu.ucr.cs.bdlab.SchemaInference.reduceKey
+
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
-import org.apache.hadoop.fs.{Path, FSDataInputStream, FileSystem}
-import org.apache.spark.{SparkContext, SparkConf}
-
+import org.apache.hadoop.fs.{FSDataInputStream, FileSystem, Path}
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.hadoop.conf.Configuration
+
 import java.io.File
 import java.io.BufferedReader
 import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.sql.types._
+
 import scala.collection.immutable.HashMap
 import java.lang.StringBuilder
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.unsafe.types.UTF8String
-import org.apache.spark.sql.{SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.beast.sql.GeometryUDT
 
-object Parser {
-  def getInputStream(filename: String, hdfsPath: String = "local"): (FSDataInputStream, Long) = {
+
+class Parser(val filePath : String = "",
+             val hdfsPath : String = "local",
+             val encoding : String = "UTF8",
+             var pda : PDA = null,
+             var pos : Long = 0,
+             var end : Long = -1
+            ) {
+
+  var (inputStream, fileSize) : (FSDataInputStream, Long) = getInputStream
+  end = if(end == -1L) {fileSize} else { end }
+  var reader : BufferedReader = getBufferedReader(pos)
+  var syntaxStackArray: ArrayBuffer[Char] = new ArrayBuffer[Char]()
+  var stackPos : Int = -1
+  var maxStackPos : Int = -1
+  var count : Long = 0
+  def getInputStream: (FSDataInputStream, Long) = {
+    if(filePath == "") return (null, -1)
     val conf = if(hdfsPath == "local") {
       SparkContext.getOrCreate().hadoopConfiguration
     } else {
-      val _conf = new Configuration()
+      val _conf = SparkContext.getOrCreate().hadoopConfiguration
       _conf.set("fs.defaultFS", hdfsPath)
       _conf
     }
     val fs = FileSystem.get(conf)
-    val path = new Path(filename)
+    val path = new Path(filePath)
     val fileSize: Long = fs.getContentSummary(path).getLength
     val inputStream: FSDataInputStream = fs.open(path)
     return (inputStream, fileSize)
   }
 
+  def repositionReader(newPos : Long): Unit = {
+    pos = newPos
+    reader = getBufferedReader(pos)
+  }
+
   def getBufferedReader(
-      inputStream: FSDataInputStream,
-      encoding: String,
       startPos: Long
   ): BufferedReader = {
+    if(inputStream == null) return (null)
     // TODO: add support for compressed files
     inputStream.seek(startPos)
     val decoder = Charset.forName(encoding).newDecoder()
@@ -71,7 +94,7 @@ object Parser {
     else { return 4 }
   }
 
-  def stringSize(s: String, encoding: String = "UTF-8"): Int = {
+  def stringSize(s: String): Int = {
     var size: Int = 0
     for (c <- s) {
       size += charSize(c.toInt)
@@ -80,35 +103,50 @@ object Parser {
   }
 
   def initSyntaxStack(
-      dfa: DFA,
-      level: Int,
-      initialState: Array[Char] = null
-  ): ArrayBuffer[Char] = {
+                       level: Int,
+                       initialState: Array[Char] = null
+  ) : Unit = {
     // TODO: should be initialized using provided initial path instead
     //       may cause issues for query with multiple descendent types
-    var syntaxStackArray: ArrayBuffer[Char] = ArrayBuffer[Char]()
+    val syntaxStackArray: ArrayBuffer[Char] = ArrayBuffer[Char]()
     var i = 0
     if (level > 0) {
       for (i <- 0 to level - 1) {
         if(initialState != null) {
           syntaxStackArray.append(initialState(i))
         }
-        else if (dfa.getStates()(i).stateType.equals("array")) {
+        else if (pda.getStates()(i).stateType.equals("array")) {
           syntaxStackArray.append('[')
         } else {
           syntaxStackArray.append('{')
         }
       }
     }
-    syntaxStackArray
+    this.syntaxStackArray = syntaxStackArray
+    stackPos = syntaxStackArray.size-1
+    maxStackPos = stackPos
   }
 
-  def appendToStack(stack : ArrayBuffer[Char], value : Char, stackPos : Int, maxStackPos : Int) : (Int, Int) = {
+  def appendToStack(stack : ArrayBuffer[Char], value : Char): Unit = {
     // appending is done like this
     // mainly to avoid having to access the last element (linear time)
     // and also to avoid memory re-allocation if possible
     // NOT thoroughly evaluated compared to just using append
-    val newPos = stackPos+1
+    stackPos = stackPos + 1
+    if (stackPos <= maxStackPos) {
+      stack(stackPos) = value
+    } else {
+      stack.append(value)
+      maxStackPos = stackPos
+    }
+  }
+
+  def appendToStack(stack : ArrayBuffer[Char], value : Char, stackPos : Int, maxStackPos : Int): (Int, Int) = {
+    // appending is done like this
+    // mainly to avoid having to access the last element (linear time)
+    // and also to avoid memory re-allocation if possible
+    // NOT thoroughly evaluated compared to just using append
+    val newPos = stackPos + 1
     if (newPos <= maxStackPos) {
       stack(newPos) = value
       return (newPos, maxStackPos)
@@ -122,7 +160,7 @@ object Parser {
     // TODO: improve this regular expression for readability
     //       and verify it covers all possible cases
     return !s
-      .replaceAll(raw"(?i)(false|alse|lse|s|e|true|rue|ue|null|ull|ll|l|NaN|aN|N|Infinity|nfinity|finity|inity|nity|ity|ty|y|[0-9]+|-|\.)", "")
+      .replaceAll(raw"(?i)(false|alse|lse|s|e|true|rue|ue|null|ull|ll|l|NaN|aN|N|Infinity|nfinity|finity|inity|nity|ity|ty|y|x|[0-9]+|-|\.)", "")
       .matches(raw"[\s+{}\[\],:]+")
   }
 
@@ -130,18 +168,11 @@ object Parser {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == 13
   }
 
-  def getNextToken(
-      reader: BufferedReader,
-      encoding: String,
-      start: Long,
-      end: Long
-  ): (String, Int) = {
-
+  def getNextToken: (String, Int) = {
     // TODO: this function can be improved
     var i: Int = 0
     var accept: Boolean = false
     var index = 0
-    var pos = start
     i = reader.read()
     pos += charSize(i)
     var c: Char = i.toChar
@@ -159,7 +190,7 @@ object Parser {
         index += charSize(i)
       }
       if (accept && i != -1) {
-        val (token, newPos) = consume(reader, encoding, pos, end, c)
+        val token = consume(c)
         i = reader.read()
 
         var t = i.toChar
@@ -169,9 +200,9 @@ object Parser {
           t = i.toChar;
           tmpIndex += charSize(i)
         }
-        pos = newPos + tmpIndex
+        pos += tmpIndex
         if (t == ':') {
-          return (token.substring(1, token.size - 1), index)
+          return (token.substring(1, token.length - 1), index)
         } else {
           index += tmpIndex
         }
@@ -180,12 +211,8 @@ object Parser {
     }
     return ("", -1)
   }
-
   def skipLevels(
-      reader: BufferedReader,
-      encoding: String,
       levels: Int,
-      end: Long
   ): (Int) = {
     var index: Int = 0
     var i: Int = 0
@@ -196,8 +223,9 @@ object Parser {
     index += charSize(i)
     while (i != -1) {
       if (c == '{' || c == '[' || c == '"') {
-        val pos : Long = skip(reader, encoding, 0, end, c)
-        index += pos.toInt
+        val prevPos = pos
+        skip(c)
+        index += (pos-prevPos).toInt
       } else if (c == '}' || c == ']') {
         remainingLevels -= 1
         if (remainingLevels == 0) {
@@ -222,26 +250,26 @@ object Parser {
   }
 
   def addToken(
-      tokens: HashMap[String, Set[(Int, Int, Int)]],
-      token: String,
-      level: Int,
-      dfaState: Int,
-      count: Int = 1,
+                tokens: HashMap[String, Set[(Int, Int, Int)]],
+                token: String,
+                level: Int,
+                pdaState: Int,
+                count: Int = 1,
   ): HashMap[String, Set[(Int, Int, Int)]] = {
     var _tokens = tokens
     if (tokens contains token) {
       var isAdded = false
       for((a,b,c) <- _tokens(token)) {
-        if(a == level && b == dfaState) {
+        if(a == level && b == pdaState) {
           isAdded = true
           _tokens = _tokens.updated(token, _tokens(token) - ((a,b,c)) + ((a,b,c+count)))
         }
       }
       if(!isAdded) {
-        _tokens = _tokens.updated(token, _tokens(token) + ((level,dfaState,count)))
+        _tokens = _tokens.updated(token, _tokens(token) + ((level,pdaState,count)))
       }
     } else {
-      _tokens = _tokens + (token -> Set((level, dfaState, count)))
+      _tokens = _tokens + (token -> Set((level, pdaState, count)))
     }
     _tokens
   }
@@ -279,7 +307,7 @@ object Parser {
             )
           }
           else {
-            val (d, subType) = v
+            val (_, subType) = v
             if(subType != null) { // its array type (get keys in its subType)
               encounteredTokens = mergeMapSet(
                 encounteredTokens,
@@ -304,7 +332,7 @@ object Parser {
 
   }
 
-  def finalizeValue(value : Any, keepIndex: Boolean, partitionId:Long, count:Long, rowMap: HashMap[String, (Int, DataType, Any)]): InternalRow = {
+  def finalizeValue(value : Any, partitionId:Long, rowMap: HashMap[String, (Int, DataType, Any)]): InternalRow = {
     val (partitionIdIndex, _, _) = if(rowMap contains "partition_id") {rowMap("partition_id")} else {(-1, null, null)}
     val (rowIndex, _, _) = if(rowMap contains "partition_row_index") {rowMap("partition_row_index")} else {(-1, null, null)}
 
@@ -324,35 +352,17 @@ object Parser {
     }
   }
   def getNextMatch(
-      reader: BufferedReader,
-      encoding: String,
-      start: Long,
-      end: Long,
-      _pos: Long,
-      syntaxStackArray: ArrayBuffer[Char],
-      __stackPos : Int,
-      __maxStackPos : Int,
-      dfa: DFA,
-      getTokens: Boolean = false,
-      getTypes: Boolean = false,
-      rowMap: HashMap[String, (Int, DataType, Any)] = null,
-      filterVariables: HashMap[String, Variable] =
-        new HashMap[String, Variable],
-      filterSize: Int = -1,
-      keepExtras : Boolean = false,
-      keepIndex : Boolean = false,
-      partitionId : Long = 0L,
-      _count: Long = 0L
-  ): (Boolean, Any, HashMap[String, Set[(Int, Int, Int)]], Long, Int, Int, Long) = {
+                    projection : ProjectionNode,
+                    getTokens: Boolean = false,
+                    getTypes: Boolean = false,
+                    keepExtras : Boolean = false,
+                    partitionId : Long = 0L,
+  ): (Boolean, Any, HashMap[String, Set[(Int, Int, Int)]]) = {
 
-    var stackPos = __stackPos
-    var maxStackPos = __maxStackPos
-    var count = _count
     var encounteredTokens = HashMap[String, Set[(Int, Int, Int)]]()
-    var pos = _pos
     while (true) {
       if (pos+1 >= end) {
-        return (false, null, encounteredTokens, pos, stackPos, maxStackPos, count)
+        return (false, null, encounteredTokens)
       }
       val i = reader.read()
       val c = i.toChar;
@@ -360,63 +370,56 @@ object Parser {
       if (isWhiteSpace(c)) {
         // SKIP
       } else if (
-        (c == ',' || c == '{') && dfa.checkArray()
+        (c == ',' || c == '{') && pda.checkArray()
       ) {
         if (getTypes) {
-          val (value, _p) = parseType(reader, encoding, pos, end, c)
-          pos = _p
-          return (true, value, encounteredTokens, pos, stackPos, maxStackPos, count)
+          val value= parseType(c, projection)
+          value match {
+            case Some(v) =>    return (true, v, encounteredTokens)
+            case None => {}
+          }
         } else {
-          val (_value, _p, skipRow) = _parse(
-            reader,
-            encoding,
-            pos,
-            end,
+          val value = _parse(
             "",
-            rowMap,
-            filterVariables,
-            filterSize,
+            projection.rowMap,
+            projection.filterVariables,
             c
           )
-
-          pos = _p
-          count+=1
-          if (!skipRow) {
-            val value = finalizeValue(_value, keepIndex, partitionId, count, rowMap)
-            return (true, value, encounteredTokens, pos, stackPos, maxStackPos, count)
+          value match {
+            case Some(v) =>
+              count+=1
+              return (true, finalizeValue(v, partitionId, projection.rowMap), encounteredTokens)
+            case None => {}
           }
         }
       } else if (c == '{') {
-        val (_stackPos, _maxStackPos) : (Int, Int) = appendToStack(syntaxStackArray, c, stackPos, maxStackPos)
-        stackPos = _stackPos
-        maxStackPos = _maxStackPos
-        if(dfa.currentState == 0 && dfa.states(0).value == "$") {
-          dfa.toNextState()
+        appendToStack(syntaxStackArray, c)
+        if(pda.currentState == 0 && pda.states(0).value == "$") {
+          pda.toNextState()
         }
       } else if (c == '[') {
-        
-        if (!dfa.toNextStateIfArray(stackPos+1) &&
-            !dfa.states(dfa.currentState).stateType.equals("descendant")) {
-          pos = skip(reader, encoding, pos, end, c)
+
+        if (!pda.toNextStateIfArray(stackPos+1) &&
+            !pda.states(pda.currentState).stateType.equals("descendant")) {
+          skip(c)
         } else {
-          val (_stackPos, _maxStackPos) : (Int, Int) = appendToStack(syntaxStackArray, c, stackPos, maxStackPos)
-        stackPos = _stackPos
-        maxStackPos = _maxStackPos
+          appendToStack(syntaxStackArray, c)
         }
 
       } else if ((c == '}' || c == ']')) {
         // TODO handle error if pop is not equal to c
         // or if stack is empty (i.e. invalid initialization, or malformed input)
         stackPos-=1
-        if (stackPos+1 == dfa.getPrevStateLevel()) {
-          dfa.toPrevState(stackPos+1);
+        if (stackPos+1 == pda.getPrevStateLevel()) {
+          pda.toPrevState(stackPos+1);
         }
+
+
 
       } else if (c == '"') {
         // get token
-        val (value, _p) = consume(reader, encoding, pos, end, c)
+        val value = consume(c)
         var token = value
-        pos = _p
         var _i = reader.read()
         var t = _i.toChar;
         pos += charSize(_i)
@@ -433,53 +436,53 @@ object Parser {
                 encounteredTokens,
                 token,
                 stackPos+1,
-                dfa.currentState
+                pda.currentState
               )
           }
           // TODO: the filter at this level can be evaluated here
           // 1. check if token in filterVariables
           // 2. check if filter is evaluated to false
           // 3. call skip function and discard of stored values appropriately
-          val dfaResponse = dfa.checkToken(token, stackPos+1)
+          val dfaResponse = pda.checkToken(token, stackPos+1)
 
           if (dfaResponse.equals("accept")) {
             if (getTypes) {
-              val (value, _p) = parseType(reader, encoding, pos, end)
-              pos = _p
-              return (true, value, encounteredTokens, pos, stackPos, maxStackPos, count)
+              val value = parseType(c, projection)
+              value match {
+                case Some(v) => return (true, v, encounteredTokens)
+                case None => {}
+              }
             } else {
-              val (_value, _p, skipRow) = _parse(
-                reader,
-                encoding,
-                pos,
-                end,
-                "",
-                rowMap,
-                filterVariables,
-                filterSize
+              val value = _parse(
+                token,
+                projection.rowMap,
+                projection.filterVariables
               )
-              pos = _p
-              count += 1
-              if (!skipRow) {
-                val value = finalizeValue(_value, keepIndex, partitionId, count, rowMap)
-                return (true, value, encounteredTokens, pos, stackPos, maxStackPos, count)
+              value match {
+                case Some(v) =>
+                  count += 1
+                  return (true, finalizeValue(v, partitionId, projection.rowMap), encounteredTokens)
+                case None => {}
               }
             }
           } else if (dfaResponse.equals("reject")) {
 
             if (getTokens) {
-              val (parsedValue, _p) = parseType(reader, encoding, pos, end)
-              pos = _p
-              encounteredTokens = mergeMapSet(
-                encounteredTokens,
-                getEncounteredTokens(
-                  parsedValue,
-                  stackPos+1,
-                  dfa.currentState
+              val _parsedValue = parseType(projection=projection)
+              _parsedValue match {
+                case Some(v) => encounteredTokens = mergeMapSet(
+                  encounteredTokens,
+                  getEncounteredTokens(
+                    v,
+                    stackPos+1,
+                    pda.currentState
+                  )
                 )
-              )
+                case None => {}
+              }
+
             } else {
-              pos = skip(reader, encoding, pos, end)
+              skip()
             }
 
           }
@@ -488,19 +491,14 @@ object Parser {
         }
       }
     }
-    return (false, null, encounteredTokens, pos, stackPos, maxStackPos, count)
+    return (false, null, encounteredTokens)
   }
 
   def consume(
-      reader: BufferedReader,
-      encoding: String,
-      _pos: Long,
-      end: Long,
       currentChar: Char = '\u0000'
-  ): (String, Long) = {
-    var pos = _pos
-    var output = new StringBuilder()
-    var localStack = scala.collection.mutable.ArrayBuffer[Char]()
+  ): String = {
+    val output = new StringBuilder()
+    val localStack = scala.collection.mutable.ArrayBuffer[Char]()
     var stackPos = -1
     var maxStackPos = -1
     var isEscaped = false
@@ -511,7 +509,7 @@ object Parser {
     if (currentChar == '\u0000' || currentChar == ',') {
       val i = reader.read()
       if (i == -1) {
-        return (output.toString(), pos)
+        return output.toString()
       }
       c = i.toChar
       pos += charSize(i)
@@ -522,7 +520,7 @@ object Parser {
       if (stackPos+1 == 0 && (c == ',' || c == ']' || c == '}')) {
         reader.reset()
         pos -= charSize(c.toInt)
-        return (output.toString(), pos);
+        return output.toString()
       } else if (
         !isString &&
         (c == '{' || c == '[' ||
@@ -543,7 +541,7 @@ object Parser {
         if (c == '"')
           isString = false;
         if (stackPos+1 == 0) {
-          return (output.toString(), pos)
+          return output.toString()
         }
       } else {
         output.append(c)
@@ -565,30 +563,25 @@ object Parser {
       }
       prevC = c
       if (pos >= end && stackPos+1 == 0) {
-        return (output.toString(), pos)
+        return output.toString()
       }
       reader.mark(1);
       val i = reader.read()
 
       if (i == -1) {
-        return (output.toString(), pos)
+        return output.toString()
       }
       c = i.toChar
       pos += charSize(i)
     }
-    return (output.toString(), pos)
+    return output.toString()
   }
 
   // like consume but doesn't store the value
   def skip(
-      reader: BufferedReader,
-      encoding: String,
-      _pos: Long,
-      end: Long,
       currentChar: Char = '\u0000'
-  ): Long = {
-    var pos = _pos
-    var localStack = scala.collection.mutable.ArrayBuffer[Char]()
+  ): Unit = {
+    val localStack = scala.collection.mutable.ArrayBuffer[Char]()
     var stackPos = -1
     var maxStackPos = -1
     var isEscaped = false
@@ -599,7 +592,7 @@ object Parser {
     if (currentChar == '\u0000' || currentChar == ',') {
       val i = reader.read()
       if (i == -1) {
-        return pos
+        return
       }
       c = i.toChar
       pos += charSize(i)
@@ -610,7 +603,7 @@ object Parser {
       if (stackPos+1 == 0 && (c == ',' || c == ']' || c == '}')) {
         reader.reset()
         pos -= charSize(c.toChar)
-        return pos;
+        return;
       } else if (
         !isString &&
         (c == '{' || c == '[' ||
@@ -631,7 +624,7 @@ object Parser {
         if (c == '"')
           isString = false;
         if (stackPos+1 == 0) {
-          return pos
+          return
         }
       } else {
         if (isString && c == '\\') {
@@ -652,13 +645,13 @@ object Parser {
       }
       prevC = c
       if (pos >= end && stackPos+1 == 0) {
-        return pos
+        return
       }
       reader.mark(1);
       val i = reader.read()
 
       if (i == -1) {
-        return pos
+        return
       }
       c = i.toChar
       pos += charSize(i)
@@ -666,31 +659,23 @@ object Parser {
       //   return pos
       // }
     }
-    return pos
   }
 
   val numRegExp =
     """[0-9\-NI]""".r // a number must start with a digit, -, or N for NaN or I for Infinity
 
   def _parse(
-      reader: BufferedReader,
-      encoding: String,
-      _pos: Long,
-      end: Long,
       key: String,
       rowMap: HashMap[String, (Int, DataType, Any)],
       filterVariables: HashMap[String, Variable] =
         new HashMap[String, Variable],
-      filterSize: Int = -1,
       currentChar: Char = '\u0000'
-  ): (Any, Long, Boolean) = {
-    var pos: Long = _pos
-
+  ): Option[Any] = {
     var c = '"'
     if (currentChar == '\u0000' || currentChar == ',') {
       val i = reader.read()
       if (i == -1) {
-        return (null, pos, false)
+        return None
       }
       c = i.toChar
       pos += charSize(i)
@@ -704,80 +689,51 @@ object Parser {
 
     while (true) {
       c match {
-        case '{' => {
-          val (obj, newPos, skipRow) =
-            _parseObject(
-              reader,
-              encoding,
-              pos,
-              end,
+        case '{' =>  return _parseObject(
               "",
               rowMap,
-              filterVariables,
-              filterSize
+              filterVariables
             )
-          return (obj, newPos, skipRow)
-        }
-        case '[' => {
-          val (arr, newPos) = _parseArray(
-            reader,
-            encoding,
-            pos,
-            end,
+        case '[' => return _parseArray(
             "",
             subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]],
             dataType
           )
-          return (arr, newPos, false)
-        }
         case '"' => {
-          val (str, newPos) = consume(reader, encoding, pos, end, c)
+          val str = consume(c)
           if (dataType.isInstanceOf[StringType]) {
-            return (
-                UTF8String.fromString(str.substring(1, str.length - 1)),
-              newPos,
-              false
-            )
+            return Some(UTF8String.fromString(str.substring(1, str.length - 1)))
           } else {
-            return (null, newPos, false)
+            return Some(null)
           }
         }
         case 'n' => {
           reader.skip(3)
-          return (
-            null,
-            pos + stringSize("ull", encoding),
-            false
-          )
+          pos += stringSize("ull")
+          return Some(null)
         }
         case 'f' => {
           reader.skip(4)
-          return (
-            false,
-            pos + stringSize("alse", encoding),
-            false
-          )
+          pos += stringSize("alse")
+          return  Some(false)
         }
         case 't' => {
           reader.skip(3)
-          return (
-            true,
-            pos + stringSize("rue", encoding),
-            false
-          )
+          pos += stringSize("rue")
+          return Some(true)
         }
         case numRegExp() => {
-          val (str, newPos) = _getNum(reader, encoding, pos, end, c)
+          val str = _getNum(c)
           if (dataType.isInstanceOf[DoubleType]) {
-            return (str.toDouble, newPos, false)
+            return Some(str.toDouble)
           } else if (dataType.isInstanceOf[LongType]){
-            return (str.toLong, newPos, false)
+            return Some(str.toLong)
           } else if (dataType.isInstanceOf[StringType]) {
             // may happen if schema inferred to null and we replaced nulls
             // with strings (in case of speculation)
-            return (UTF8String.fromString(str), newPos, false)
+            return Some(UTF8String.fromString(str))
           } else {
-            return (null, newPos, false)
+            return None
           }
         }
         case _ => {} // these are skipped (e.g. whitespace)
@@ -785,33 +741,22 @@ object Parser {
 
       val i = reader.read()
       if (i == -1) {
-        return (null, pos, false)
+        return None
       }
       c = i.toChar
       pos += charSize(i)
     }
-    return (null, pos, false)
+    return None
   }
 
   def _parseObject(
-      reader: BufferedReader,
-      encoding: String,
-      _pos: Long,
-      end: Long,
       parentKey: String,
       rowMap: HashMap[String, (Int, DataType, Any)],
       filterVariables: HashMap[String, Variable] =
         new HashMap[String, Variable],
-      filterSize: Int = -1
-  ): (Any, Long, Boolean) = {
-    // TODO: - re-implemented to avoid recursion for nested objects (would make code even less readable)
-    //       - update record initalization to something more efficient
-    //          here first it allocates a memory block, and then adds references
-    //          to the values, this probably also requires copying when converted
-    //          to a row
+  ): Option[Any] = {
     val rowSequence = new Array[Any](rowMap.size)
-    val predicateValues = if (filterSize > 0) { new Array[Any](filterSize) }
-    else { new Array[Any](1) }
+    val predicateValues = if(filterVariables != null) {new Array[Any](filterVariables.size)} else {new Array[Any](0)}
     var rowCounter = 0
     if(rowMap contains "partition_id") {
       rowCounter += 2
@@ -819,22 +764,17 @@ object Parser {
     var isKey = true
     var key = ""
 
-    var pos: Long = _pos
     while (true) { // parse until full object or end of file
       if (rowCounter == rowMap.size) {
-        pos = skip(reader, encoding, pos, end, '{')
-        if(parentKey == "")
-          return (rowSequence, pos, false)
+        skip('{')
+        if(parentKey == "*")
+          return Some(rowSequence)
         else
-          return (InternalRow.fromSeq(rowSequence.toSeq), pos, false)
+          return Some(InternalRow.fromSeq(rowSequence.toSeq))
       }
       val i = reader.read()
       if (i == -1) {
-        return (
-          null,
-          pos,
-          true
-        ) // maybe raise an exception since object is not fully parsed
+        return None
       }
       val c = i.toChar
       pos += charSize(i)
@@ -847,60 +787,52 @@ object Parser {
         case '{' => {
 
           if(dataType.isInstanceOf[StringType]) {
-            val (obj, newPos) =
-              consume(reader, encoding, pos, end, c)
+            val obj =
+              consume(c)
             rowSequence(index) = UTF8String.fromString(obj)
-            pos = newPos
-
           } else {
-            val (obj, newPos, _) = _parseObject(
-              reader,
-              encoding,
-              pos,
-              end,
+            val obj = _parseObject(
               key,
               subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]]
             )
-            rowSequence(index) = obj
-            pos = newPos
+            // Some
+            obj match {
+              case Some(o) => rowSequence(index) = o
+              case None => {}
+            }
           }
           rowCounter += 1
           isKey = true
         }
         case '[' => {
           if(dataType.isInstanceOf[StringType]) {
-            val (str, newPos) =
-              consume(reader, encoding, pos, end, c)
+            val str =
+              consume(c)
             rowSequence(index) = UTF8String.fromString(str.trim)
-            pos = newPos
           } else {
-            val (arr, newPos) = _parseArray(
-              reader,
-              encoding,
-              pos,
-              end,
+            val arr = _parseArray(
               key,
               subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]],
               dataType
             )
             // map = map + ((key, arr))
-            rowSequence(index) = arr
-            pos = newPos
+            arr match {
+              case Some(a) => rowSequence(index) = arr
+              case None => {}}
+
           }
           rowCounter += 1
           isKey = true
-
         }
         case '"' => {
-          val (str, newPos) = consume(reader, encoding, pos, end, c)
-          pos = newPos
+          val str = consume(c)
 
           if (isKey) {
             key = str.substring(1, str.length - 1)
             if (rowMap contains key) {
               isKey = false
             } else {
-              pos = skip(reader, encoding, pos, end)
+              skip()
             }
           } else {
             if (dataType.isInstanceOf[StringType]) {
@@ -911,7 +843,7 @@ object Parser {
           }
         }
         case numRegExp() => {
-          val (str, newPos) = _getNum(reader, encoding, pos, end, c)
+          val str = _getNum(c)
           if (dataType.isInstanceOf[DoubleType]) {
             rowSequence(index) = str.toDouble
           } else if (dataType.isInstanceOf[LongType]){
@@ -923,7 +855,6 @@ object Parser {
           }
           rowCounter += 1
           isKey = true
-          pos = newPos
         }
         case 'n' => {
           // map = map + ((key, null))
@@ -932,7 +863,7 @@ object Parser {
 
           rowCounter += 1
           isKey = true
-          pos = pos + stringSize("ull", encoding)
+          pos = pos + stringSize("ull")
           reader.skip(3)
         }
         case 'f' => {
@@ -945,7 +876,7 @@ object Parser {
             rowSequence(index) = false
           }
           isKey = true
-          pos = pos + stringSize("alse", encoding)
+          pos = pos + stringSize("alse")
           reader.skip(4)
         }
         case 't' => {
@@ -958,14 +889,14 @@ object Parser {
           }
           rowCounter += 1
           isKey = true
-          pos = pos + stringSize("rue", encoding)
+          pos = pos + stringSize("rue")
           reader.skip(3)
         }
         case '}' => {
           if(parentKey == "")
-            return (rowSequence, pos, false)
+            return Some(rowSequence)
           else
-            return (InternalRow.fromSeq(rowSequence.toSeq), pos, false)
+            return Some(InternalRow.fromSeq(rowSequence.toSeq))
           // return (row, pos, false)
         }
         case _ => {} // skip character
@@ -978,8 +909,8 @@ object Parser {
       }
 
       if (predicateValues(0) == false) {
-        pos = skip(reader, encoding, pos, end, '{')
-        return (null, pos, true)
+        skip('{')
+        return None
       }
     }
 
@@ -989,22 +920,16 @@ object Parser {
   }
 
   def _parseArray(
-      reader: BufferedReader,
-      encoding: String,
-      _pos: Long,
-      end: Long,
       parentKey: String,
       rowMap: HashMap[String, (Int, DataType, Any)],
       dataType: DataType
-  ): (ArrayData, Long) = {
-    // TODO: re-implement to avoid recursion if possible ()
-    var arr = new ArrayBuffer[Any]()
-    var pos: Long = _pos
+  ): Option[ArrayData] = {
+    val arr = new ArrayBuffer[Any]()
 
     while (true) {
       val i = reader.read()
       if (i == -1) {
-        return (null, pos)
+        return None
       }
       val c = i.toChar
       pos += charSize(i)
@@ -1012,56 +937,49 @@ object Parser {
       c match {
         case '{' => {
           if(rowMap != null) { // if null probably speculation only encountered empty lists
-            val (obj, newPos, _) =
-              _parseObject(reader, encoding, pos, end, parentKey, rowMap)
-            arr.append(obj)
-            pos = newPos
+            val obj =
+              _parseObject(parentKey, rowMap)
+            obj match {
+              case Some(obj) => arr.append(obj)
+              case None => {}
+            }
             } else if (dataType.isInstanceOf[StringType]) {
-              val (str, newPos) = consume(reader, encoding, pos, end, '{')
-              pos = newPos
+              val str = consume('{')
               arr.append(str)
             } else { // skip it
-              pos = skip(reader, encoding, pos, end, '{')
+              skip('{')
             }
         }
         case '[' => {
           if (dataType.isInstanceOf[DoubleType]) {
-            val (str, newPos) = consume(reader, encoding, pos, end, '[')
-            pos = newPos
+            val str = consume('[')
             val _doubleArr =
               str.trim.substring(1, str.size - 1).split(",").map(_.toDouble)
-            return (ArrayData.toArrayData(_doubleArr), pos)
+            return Some(ArrayData.toArrayData(_doubleArr))
           } else if (dataType.isInstanceOf[LongType]) {
-            val (str, newPos) = consume(reader, encoding, pos, end, '[')
-            pos = newPos
+            val str = consume('[')
             val _longArr =
               str.trim.substring(1, str.size - 1).split(",").map(_.toLong)
-            return (ArrayData.toArrayData(_longArr), pos)
+            return Some(ArrayData.toArrayData(_longArr))
           } else {
             val _dataType = if (dataType.isInstanceOf[ArrayType]) {
               dataType.asInstanceOf[ArrayType].elementType
             } else { dataType }
-            val (_arr, newPos) =
+            val _arr =
               _parseArray(
-                reader,
-                encoding,
-                pos,
-                end,
                 parentKey,
                 rowMap,
                 _dataType
               )
             arr.append(_arr)
-            pos = newPos
           }
         }
         case '"' => {
-          val (str, newPos) = consume(reader, encoding, pos, end, c)
+          val str= consume(c)
           arr.append(UTF8String.fromString(str.substring(1, str.length - 1)))
-          pos = newPos
         }
         case numRegExp() => {
-          val (str, newPos) = _getNum(reader, encoding, pos, end, c)
+          val str= _getNum(c)
           val _dataType = if (dataType.isInstanceOf[ArrayType]) {
               dataType.asInstanceOf[ArrayType].elementType
             } else { dataType }
@@ -1076,25 +994,24 @@ object Parser {
           }
           // val (num, newPos) = _parseDouble(reader, encoding, pos, end, c)
           // arr.append(num)
-          pos = newPos
         }
         case 'n' => {
           arr.append(null)
-          pos = pos + stringSize("ull", encoding)
+          pos = pos + stringSize("ull")
           reader.skip(3)
         }
         case 'f' => {
           arr.append(false)
-          pos = pos + stringSize("alse", encoding)
+          pos = pos + stringSize("alse")
           reader.skip(4)
         }
         case 't' => {
           arr.append(true)
-          pos = pos + stringSize("rue", encoding)
+          pos = pos + stringSize("rue")
           reader.skip(3)
         }
         case ']' => {
-          return (ArrayData.toArrayData(arr), pos)
+          return Some(ArrayData.toArrayData(arr))
         }
         case _ => {} // skip character
       }
@@ -1105,24 +1022,19 @@ object Parser {
   }
 
   def _getNum(
-      reader: BufferedReader,
-      encoding: String,
-      _pos: Long,
-      end: Long,
       currentChar: Char = '\u0000'
-  ): (String, Long) = {
-    var pos: Long = _pos
+  ): String = {
     var str = new StringBuilder()
 
     var c = currentChar
     while (true) {
       if(isWhiteSpace(c)) {
-        return (str.toString(), pos)
+        return str.toString()
       }
       else if (c == ']' || c == '}' || c == ',') {
         reader.reset()
         pos -= charSize(c.toInt)
-        return (str.toString(), pos)
+        return str.toString()
       } else {
         str.append(c)
       }
@@ -1144,21 +1056,14 @@ object Parser {
   }
 
   def parseType(
-      reader: BufferedReader,
-      encoding: String,
-      _pos: Long,
-      end: Long,
-      currentChar: Char = '\u0000'
-  ): (Any, Long) = {
-    // TODO: update to also evaluate JSONPath filters at the accept level
-    //       and re-implement to avoid recursion
-    var pos: Long = _pos
-
+      currentChar: Char = '\u0000',
+      projection: ProjectionNode
+  ): Option[Any] = {
     var c = '"'
     if (currentChar == '\u0000' || currentChar == ',') {
       val i = reader.read()
       if (i == -1) {
-        return (null, pos)
+        return None
       }
       c = i.toChar
       pos += charSize(i)
@@ -1168,39 +1073,44 @@ object Parser {
     while (true) {
       c match {
         case '{' => {
-          val (objType, newPos) =
-            parseObjectType(reader, encoding, pos, end, "")
+          val objType =
+            parseObjectType("*", projection)
           // if(!(objType contains("GO")))
           // println(c, objType)
-          return (objType, newPos)
+          return objType
         }
         case '[' => {
-          val (arrType, newPos) = parseArrayType(reader, encoding, pos, end, "")
-          return (arrType, newPos)
+          val arrType =
+            parseArrayType("*", projection)
+          return arrType
         }
         case '"' => {
-          val newPos = skip(reader, encoding, pos, end, c)
-          return ((StringType, null), newPos)
+          val prevPos = pos
+          skip(c)
+          if(pos-prevPos <= 1) { return Some((NullType, null)) } // empty strings are treated as NullType (this solves an issue in one dataset, where they provide an empty string for missing values
+          return Some((StringType, null))
         }
         case 'n' => {
           reader.skip(3)
-          return ((NullType, null), pos + stringSize("ull", encoding))
+          pos += stringSize("ull")
+          return Some((NullType, null))
         }
         case 'f' => {
           reader.skip(4)
-          return ((BooleanType, null), pos + stringSize("alse", encoding))
+          pos += stringSize("alse")
+          return Some((BooleanType, null))
         }
         case 't' => {
           reader.skip(3)
-          return ((BooleanType, null), pos + stringSize("rue", encoding))
+          pos += stringSize("rue")
+          return Some((BooleanType, null))
         }
         case numRegExp() => {
-          val (str, newPos) = consume(reader, encoding, pos, end, c)
-          pos = newPos
-          if(str contains ".")
-            return ((DoubleType, null), newPos)
+          val str= consume(c)
+          if(!(str matches "\\d+"))
+            return Some((DoubleType, null))
           else
-            return ((LongType, null), newPos)
+            return Some((LongType, null))
           // val newPos = skip(reader, encoding, pos, end, c)
         }
         case _ => {} // these are skipped (e.g. whitespace)
@@ -1208,108 +1118,232 @@ object Parser {
 
       val i = reader.read()
       if (i == -1) {
-        return ((NullType, null), pos)
+        return None
       }
       c = i.toChar
       pos += charSize(i)
     }
-    return ((NullType, null), pos)
+    return None
   }
 
   def parseObjectType(
-      reader: BufferedReader,
-      encoding: String,
-      _pos: Long,
-      end: Long,
-      parentKey: String
-  ): (HashMap[String, Any], Long) = {
+      parentKey: String,
+      projection: ProjectionNode,
+  ): Option[HashMap[String, Any]]= {
     var map = HashMap[String, Any]()
     var isKey = true
     var key = ""
-
-    var pos: Long = _pos
+    var inFilter = false
+    var inChildren = false
+    var inDescendants = false
+    var keyIndex = -1
+    var keyProjection : ProjectionNode = new ProjectionNode()
+    val rowSequence = new Array[Any](projection.rowMap.size)
+    val predicateValues = new Array[Any](projection.rowMap.size)
     while (true) { // parse until full object or end of file
       val i = reader.read()
       if (i == -1) {
-        return (null, pos)
+        return None
       }
       val c = i.toChar
       pos += charSize(i)
       c match {
         case '{' => {
-          val (objType, newPos) =
-            parseObjectType(reader, encoding, pos, end, key)
-          map = map + ((key, objType))
+
+          val objType =
+            parseObjectType(key, keyProjection)
+          objType match {
+            case Some(o) => {
+              var newSubMap = new HashMap[String, Any]()
+              for((k,v) <- o) {
+                if(projection.descendantsTree.contains(k) && projection.descendantsTree(k).parentKey.equals(parentKey)){
+                  map = map + ((".." + k,v))
+                } else if((keyProjection.notDescending && keyProjection.acceptAll) || keyProjection.childrenTree.contains(k)) {
+                  newSubMap = newSubMap + ((k, v))
+                } else {
+                  map = map + ((k,v))
+                }
+              }
+              map = map + ((key, newSubMap))
+            }
+            case None => {}
+          }
+          if(inFilter) {
+            // TODO fix it (may require passing the inputStream to reset the position
+            // Only filter for Geometry is supported for this type
+            // has to be a nested filter otherwise
+            // ignore it for now
+            inFilter = false
+          }
           isKey = true
-          pos = newPos
         }
         case '[' => {
           if (
             (parentKey.equals("geometry") && (key.equals("coordinates")
             || parentKey.equals("geometries")))
           ) {
-            val newPos =
-              skip(reader, encoding, pos, end, c)
+            skip(c)
             // encoded as string because a geometry can have a different dimension
             // based on type, e.g. points are 1d, polygons are 3d, etc.
-            map = map + ((key, (StringType, null)))
-            pos = newPos
+            if(projection.acceptAll || inChildren || inDescendants) {
+              map = map + ((key, (StringType, null)))
+            }
           } else {
-            val (arrType, newPos) =
-              parseArrayType(reader, encoding, pos, end, key)
-            map = map + ((key, arrType))
-            pos = newPos
+            val arrType =
+              parseArrayType(key, keyProjection)
+            arrType match {
+              case Some(at) => {
+                if(!inChildren && !inDescendants && !projection.acceptAll) {
+                  val subType = at._2.asInstanceOf[HashMap[String, Any]]
+                  for((_k,v) <- subType) {
+
+                    val k  = if(projection.descendantsTree(_k).parentKey.equals(parentKey)) { ".." + _k } else {_k}
+                    if(_k.equals("secondDay")) {
+                      println(_k, projection.descendantsTree(_k).parentKey.equals(parentKey))
+                    }
+                    map = map + ((k, (ArrayType(NullType), v)))
+                  }
+                } else {
+                  map = map + ((key, at))
+                }
+              }
+              case None => {}
+            }
+
+            if(inFilter) {
+              // TODO fix it (may require passing the inputStream to reset the position
+              // Only filter for arrays with basic types is supported
+              // has to be a nested filter otherwise
+              // ignore it for now
+              inFilter = false
+            }
           }
           isKey = true
 
         }
         case '"' => {
           if (isKey) {
-            val (str, newPos) = consume(reader, encoding, pos, end, c)
+            val str = consume(c)
             key = str.substring(1, str.length - 1)
             isKey = false
-            pos = newPos
+            inFilter = projection.rowMap.contains(key)
+            inChildren = projection.childrenTree.contains(key)
+            inDescendants = projection.descendantsTree.contains(key)
+            if(!projection.acceptAll && !projection.hasDescendants && !inChildren && !inFilter) {
+              skip()
+              isKey = true
+            } else {
+              if(inFilter) {
+                val (_keyIndex, _, _) = projection.rowMap(key)
+                keyIndex = _keyIndex
+              }
+              else {
+                keyProjection = if(inChildren) {projection.childrenTree(key) } else if(inDescendants) { projection.descendantsTree(key) } else {
+                  new ProjectionNode()
+                }
+                keyProjection.acceptAll = projection.acceptAll || keyProjection.acceptAll
+                keyProjection.descendantsTree = keyProjection.descendantsTree ++ projection.descendantsTree
+                if(projection.hasDescendants && !inChildren && !inDescendants) {
+                  keyProjection.notDescending = false
+                }
+              }
+            }
           } else {
-            val newPos =
-              skip(reader, encoding, pos, end, c)
-            map = map + ((key, (StringType, null)))
+
+            val prevPos = pos
+            val str = if(inFilter) {
+              consume(c)
+            } else { skip(c); ""}
+            if(inFilter) {
+              rowSequence(keyIndex) = str
+            }
+            if(projection.acceptAll || inChildren || inDescendants) {
+              if(pos-prevPos <= 1) {
+                map = map + ((key, (NullType, null)))
+              } else {
+                map = map + ((key, (StringType, null)))
+              }
+            }
             isKey = true
-            pos = newPos
 
           }
         }
         case numRegExp() => {
-          val (str, newPos) = consume(reader, encoding, pos, end, c)
+          val str = consume(c)
           // pos = skip(reader, encoding, newPos, end, c)
-          if(str contains ".") 
-            map = map + ((key, (DoubleType, null)))
-          else
-            map = map + ((key, (LongType, null)))
+          if(!(str matches "\\d+")) {
+            if(inFilter) {
+              rowSequence(keyIndex) = str.toDouble
+            }
+            if(projection.acceptAll || inChildren || inDescendants) {
+              map = map + ((key, (DoubleType, null)))
+            }
+          } else {
+            if(inFilter) {
+              rowSequence(keyIndex) = str.toLong
+            }
+            if(projection.acceptAll || inChildren || inDescendants) {
+              map = map + ((key, (LongType, null)))
+            }
+          }
           isKey = true
-          pos = newPos
         }
         case 'n' => {
-          map = map + ((key, (NullType, null)))
+          // ignore null fields if not already in projection
+          if(inFilter || inChildren || inDescendants) { map = map + ((key, (NullType, null))) }
           isKey = true
-          pos = pos + stringSize("ull", encoding)
+          pos = pos + stringSize("ull")
           reader.skip(3)
         }
         case 'f' => {
-          map = map + ((key, (BooleanType, null)))
+          if(inFilter) {
+            rowSequence(keyIndex) = false
+          }
+          if(projection.acceptAll || inChildren || inDescendants) {
+            map = map + ((key, (BooleanType, null)))
+          }
           isKey = true
-          pos = pos + stringSize("alse", encoding)
+          pos = pos + stringSize("alse")
           reader.skip(4)
         }
         case 't' => {
-          map = map + ((key, (BooleanType, null)))
+          if(inFilter) {
+            rowSequence(keyIndex) = true
+          }
+          if(projection.acceptAll || inChildren || inDescendants) {
+            map = map + ((key, (BooleanType, null)))
+          }
           isKey = true
-          pos = pos + stringSize("rue", encoding)
+          pos = pos + stringSize("rue")
           reader.skip(3)
         }
         case '}' => {
-          return (map, pos)
+          if(map.isEmpty) {
+            return None
+          }
+          if(projection.hasFilter && predicateValues(0) == null) {
+            for((_, predicate) <- projection.filterVariables) {
+              predicate.propagate(predicateValues, rowSequence)
+            }
+          }
+          if(projection.hasFilter && predicateValues(0) == false) {
+            return None
+          } else {
+            return Some(map)
+          }
         }
         case _ => {} // skip character
+      }
+
+      if (
+        isKey && inFilter && predicateValues(0) == null
+      ) {
+        projection.filterVariables(key).propagate(predicateValues, rowSequence)
+      }
+
+      if (projection.hasFilter && predicateValues(0) == false) {
+        skip('{')
+        return None
       }
 
     }
@@ -1320,69 +1354,81 @@ object Parser {
   }
 
   def parseArrayType(
-      reader: BufferedReader,
-      encoding: String,
-      _pos: Long,
-      end: Long,
-      parentKey: String
-  ): ((Any, Any), Long) = {
-    var pos: Long = _pos
+      parentKey: String,
+      projection: ProjectionNode
+  ): Option[(Any, Any)] = {
+    var mergedMaps = new HashMap[String, Any]()
+    var mergedArrType : (Any, Any) = (ArrayType(NullType), NullType)
+    var selectedType : DataType = NullType
     while (true) {
       val i = reader.read()
       if (i == -1) {
-        return (null, pos)
+        return None
       }
       val c = i.toChar
       pos += charSize(i)
       c match {
         case '{' => {
-          val (objType, newPos) =
-            parseObjectType(reader, encoding, pos, end, parentKey)
-          val newPos2 = skip(reader, encoding, newPos, end, '[')
-          pos = newPos2
-          return ((ArrayType(NullType), objType), pos)
+          val objType =
+            parseObjectType("[*]", projection)
+          objType match {
+            case Some(ot) => mergedMaps = mergedMaps.merged(ot)(reduceKey)
+            case None => {}
+          }
         }
         case '[' => {
-          val (arrType, newPos) =
-            parseArrayType(reader, encoding, pos, end, parentKey)
-          val newPos2 = skip(reader, encoding, newPos, end, '[')
-          pos = newPos2
-          return ((ArrayType(NullType), arrType), pos)
+          val arrType =
+            parseArrayType(parentKey, projection)
+          arrType match {
+            case Some(at) => mergedArrType = SchemaInference.reduceKey(("_", mergedArrType), ("_", at))._2.asInstanceOf[(Any, Any)]
+            case None => {}
+          }
         }
         case '"' => {
-          val newPos = skip(reader, encoding, pos, end, c)
-          val newPos2 = skip(reader, encoding, newPos, end, '[')
-          pos = newPos2
-          return ((ArrayType(NullType), (StringType, null)), pos)
+          skip(c)
+          if(projection.notDescending) {
+            selectedType = SchemaInference.selectType(selectedType, StringType)
+          }
         }
         case numRegExp() => {
-          val (str, newPos) = consume(reader, encoding, pos, end, c)
-          pos = skip(reader, encoding, newPos, end, '[')
-          if(str contains ".")
-            return ((ArrayType(NullType), (DoubleType, null)), pos)
-          else
-            return ((ArrayType(NullType), (LongType, null)), pos)
+          val str = consume(c)
+          if(projection.notDescending) {
+            if(str matches "\\d+") {
+              selectedType = SchemaInference.selectType(selectedType, LongType)
+            } else {
+              selectedType = SchemaInference.selectType(selectedType, DoubleType)
+            }
+          }
         }
         case 'n' => {
-          pos = pos + stringSize("ull", encoding)
+          pos = pos + stringSize("ull")
           reader.skip(3)
-          // don't return here in case not all are null
         }
         case 'f' => {
-          pos = pos + stringSize("alse", encoding)
+          pos = pos + stringSize("alse")
           reader.skip(4)
-          return ((ArrayType(NullType), BooleanType), pos)
+          if(projection.notDescending) {
+            selectedType = SchemaInference.selectType(selectedType, BooleanType)
+          }
         }
         case 't' => {
-          pos = pos + stringSize("rue", encoding)
+          pos = pos + stringSize("rue")
           reader.skip(3)
-          return ((ArrayType(NullType), (BooleanType, null)), pos)
+          if(projection.notDescending) {
+            selectedType = SchemaInference.selectType(selectedType, BooleanType)
+          }
         }
         case ']' => {
-          return (
-            (ArrayType(NullType), (NullType, null)),
-            pos
-          ) // no type was identified
+          if(mergedMaps.nonEmpty) {
+            return Some((ArrayType(NullType), mergedMaps))
+          }
+          if(mergedArrType._2 != NullType) {
+            return Some((ArrayType(NullType), mergedArrType))
+          }
+          if(projection.notDescending && selectedType != NullType) {
+            return Some((ArrayType(NullType), selectedType))
+          }
+          return None
         }
         case _ => {} // skip character
       }
@@ -1390,6 +1436,10 @@ object Parser {
     throw new Exception(
       "Couldn't parse type of array at " + pos
     )
+  }
+
+  def close() : Unit = {
+    reader.close()
   }
 
 }

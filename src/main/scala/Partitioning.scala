@@ -22,7 +22,7 @@ import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.types._
 
 import java.io.BufferedInputStream
-import scala.collection.immutable.{HashMap, HashSet}
+import scala.collection.immutable.HashMap
 import scala.collection.mutable.ArrayBuffer
 
 object Partitioning {
@@ -89,25 +89,29 @@ object Partitioning {
     println("MaxBucketSize: " + sparkMaxBucketSize)
 
     var totalSize = 0L
+
+    var fileSizes = new HashMap[String, Long]()
     for (path <- filePaths) {
-      val (_, fileSize) = Parser.getInputStream(path, options.hdfsPath)
-      totalSize += fileSize
+      val parser = new Parser(path, options.hdfsPath)
+      fileSizes = fileSizes + ((path, parser.fileSize))
+      totalSize += parser.fileSize
+      parser.close()
     }
     val bucketSize = ((1.0*totalSize/sparkExecuters).ceil.toLong)
                         .min(sparkMaxBucketSize) // shouldn't be more than this
                         .max(sparkMinBucketSize) // shouldn't be less than this
     println("BucketSize: " + bucketSize)
     for (path <- filePaths) {
-      val (inputStream, fileSize) =
-        Parser.getInputStream(path, options.hdfsPath)
+      val fileSize= fileSizes(path)
       val nPartitions = (1.0 * fileSize / bucketSize).ceil.toInt
 
       var startIndex = 0L;
       var endIndex = bucketSize.min(fileSize);
-      for (i <- 0 to nPartitions - 1) {
+      for (i <- 0 until nPartitions) {
         partitions.append(
           new JsonInputPartition(
             path,
+            options.hdfsPath,
             startIndex,
             endIndex,
             0,
@@ -150,104 +154,77 @@ object Partitioning {
 //      startState
 //    )
 //  }
+def speculate(
+               partition: JsonInputPartition,
+               options: JsonOptions
+             ): JsonInputPartition = {
 
-  def speculate(
-      partition: JsonInputPartition,
-      options: JsonOptions
-  ): JsonInputPartition = {
+  var start = partition.start
+  var startLevel = 0
+  var startState = 0
+  val speculationKeys = options.speculationKeys
+  val parser = new Parser(partition.path, partition.hdfsPath, options.encoding, pos=partition.start, end=partition.end)
+  val pda = options.getPDA()
+  val maxQueryLevel = pda.states.length
 
-    var start = partition.start
-    var end = partition.end
-    var partitionLevel = 0
-    var startLevel = 0
-    var startState = 0
-    var startToken = ""
-    var speculationKeys = options.speculationKeys
-    val (inputStream, fileSize) =
-      Parser.getInputStream(partition.path, options.hdfsPath)
-    var dfa = options.getDFA()
-    val maxQueryLevel = dfa.states.length
+  // shift the start index and determine label and level
+  var partitionLabel = ""
+  var shiftedEndIndex = start
+  if (start > 0) {
+    var token = ""
+    var partitionLevel = maxQueryLevel
+    var partitionState = 0
+    partitionLabel = ""
+    var skippedLevels = false
+    var foundToken = false
+    while (!foundToken && shiftedEndIndex < parser.fileSize) {
+      parser.repositionReader(shiftedEndIndex)
+      val (tmpToken, index) = parser.getNextToken
+      if (
+        (speculationKeys contains tmpToken)
+      ) {
+        foundToken = true
+        token = tmpToken
+        partitionLevel = speculationKeys(token)._1
+        partitionState = speculationKeys(token)._2
+        partitionLabel = token
+        if (partitionLevel > partitionState) {
 
-    // shift the start index and determine label and level
-    var partitionLabel = ""
-    var shiftedEndIndex = start
-    if (start > 0) {
-      var token = ""
-      var partitionLevel = maxQueryLevel
-      var partitionState = 0
-      partitionLabel = ""
-      var skippedLevels = false
-      var foundToken = false
-      while (!foundToken && shiftedEndIndex < fileSize) {
-        val bufferedReader =
-          Parser.getBufferedReader(
-            inputStream,
-            options.encoding,
-            shiftedEndIndex
-          )
-        val (tmpToken, index) =
-          Parser.getNextToken(
-            bufferedReader,
-            options.encoding,
-            partition.start,
-            partition.end
-          )
-        if (
-          (speculationKeys contains tmpToken)
-        ) {
-          foundToken = true
-          token = tmpToken
-          partitionLevel = speculationKeys(token)._1
-          partitionState = speculationKeys(token)._2
-          partitionLabel = token
-          if (partitionLevel > partitionState) {
-
-            shiftedEndIndex = shiftedEndIndex + Parser.skipLevels(
-              bufferedReader,
-              options.encoding,
-              partitionLevel - partitionState,
-              fileSize
-            ) + 2
-            partitionLevel = partitionState
-            skippedLevels = true
-          }
-        }
-        if (index == -1) {
-          shiftedEndIndex = fileSize
-        } else {
-          shiftedEndIndex += index + Parser.stringSize(
-            token,
-            options.encoding
-          ) + 2
+          shiftedEndIndex = shiftedEndIndex + parser.skipLevels(partitionLevel - partitionState) + 2
+          partitionLevel = partitionState
+          skippedLevels = true
         }
       }
-      if (!skippedLevels) {
-        shiftedEndIndex -= Parser.stringSize(
-          partitionLabel,
-          options.encoding
-        ) + 2
+      if (index == -1) {
+        shiftedEndIndex = parser.fileSize
+      } else {
+        shiftedEndIndex += index + parser.stringSize(token) + 2
       }
+    }
+    if (!skippedLevels) {
+      shiftedEndIndex -= parser.stringSize(partitionLabel) + 2
+    }
 
-      startLevel = partitionLevel
-      startState = partitionState
-      start = shiftedEndIndex
+    startLevel = partitionLevel
+    startState = partitionState
+    start = shiftedEndIndex
 
-      if (startState > 0 && startState == startLevel && !skippedLevels) {
-        startState -= 1
-
-      }
+    if (startState > 0 && startState == startLevel && !skippedLevels) {
+      startState -= 1
 
     }
 
-    return new JsonInputPartition(
-      partition.path,
-      start,
-      partition.end,
-      startLevel,
-      startState
-    )
   }
 
+  return new JsonInputPartition(
+    partition.path,
+    options.hdfsPath,
+    start,
+    partition.end,
+    startLevel,
+    startState
+  )
+}
   def speculation(options: JsonOptions): Array[InputPartition] = {
     val filePaths: Seq[String] = getFilePaths(options)
 
@@ -275,7 +252,7 @@ object Partitioning {
       "\n\n\n\n\n#################KEYS AVAILABLE FOR SPECULATION#############"
     )
     println("KEY,LEVEL,DFA STATE,#ENCOUNTERED")
-    speculationKeys.map({ case (k, v) =>
+    speculationKeys.foreach({ case (k, v) =>
       println(k + "," + v._1 + "," + v._2 + "," + v._3)
     })
     println("##########################################\n\n\n\n\n")
@@ -305,6 +282,7 @@ object Partitioning {
       q.append(
         new JsonInputPartition(
           partition.path,
+          partition.hdfsPath,
           partition.start,
           end,
           partition.startLevel,
@@ -474,12 +452,10 @@ object Partitioning {
 
     var syntaxStack: ArrayBuffer[Byte] = new ArrayBuffer[Byte]()
     var syntaxPositions: ArrayBuffer[Long] = new ArrayBuffer[Long]()
-
-    val (inputStream, fileSize) =
-      Parser.getInputStream(partition.path, options.hdfsPath)
+    val parser =  new Parser(partition.path, options.hdfsPath, options.encoding, pos=partition.start, end=partition.end)
 
 
-    if (partition.start == 0 && partition.end == fileSize) {
+    if (partition.start == 0 && partition.end == parser.fileSize) {
       // no need for this function for files with one partition
       return (
         partition.path,
@@ -490,28 +466,19 @@ object Partitioning {
         false
       )
     }
-    var bufferedReader =
-      Parser.getBufferedReader(inputStream, options.encoding, partition.start)
     var pos = partition.start
-    var start = partition.start
-    var token = ""
-    var acceptToken = false
     var isValue = false
     var stackPos: Int = -1
     var stackPosMax: Int = -1
     var append = false
     var appendValue : Byte = 0
-    val controlChars = HashSet[Byte](OBJECT_START, OBJECT_END, ARRAY_START, ARRAY_END, QUOTE)
+//    val controlChars = HashSet[Byte](OBJECT_START, OBJECT_END, ARRAY_START, ARRAY_END, QUOTE)
 
     if(partition.start > 0) {
-      val (_token, _pos) = Parser.consume(
-        bufferedReader,
-        options.encoding,
-        pos,
-        partition.end,
+      val _token = parser.consume(
         '"'
       )
-      val isValidString = Parser.isValidString(
+      val isValidString = parser.isValidString(
         _token
           .substring(1, _token.size - 1)
       )
@@ -519,27 +486,24 @@ object Partitioning {
       
 
       if (isValidString) { // skip it
-        pos = _pos
+        pos = parser.pos
       } else {
         // TODO: if not valid string search for token and adjust positions
         // Parser.getNextToken (returns the position as well)
         // use that position to determine the correct classification 
         // if start is string or not
         // reset reader to reconsider json characters
-
-        bufferedReader =
-          Parser.getBufferedReader(inputStream, options.encoding, pos)
+        parser.repositionReader(pos)
       }
     }
 
-    bufferedReader.close()
-    inputStream.seek(pos)
-    val byteStream =  new BufferedInputStream(inputStream)
+    parser.inputStream.seek(pos)
+    val byteStream =  new BufferedInputStream(parser.inputStream)
     val buf : Array[Byte] = new Array[Byte](1)
 
     while (pos < partition.end) {
 
-      val i = byteStream.read(buf, 0, 1)
+      byteStream.read(buf, 0, 1)
       val c = buf(0)
       pos += 1
       append = false
@@ -624,6 +588,8 @@ object Partitioning {
 
     }
 
+    byteStream.close()
+
     val finalSyntaxStack = new ArrayBuffer[String]()
     val finalPosStack = new ArrayBuffer[Long]()
 
@@ -637,11 +603,10 @@ object Partitioning {
         case ARRAY_START => appendVal = "["
         case ARRAY_END => appendVal = "]"
         case QUOTE => {
-          bufferedReader = Parser.getBufferedReader(inputStream, options.encoding, p)
-          val (token, _pos) = Parser.consume(bufferedReader, options.encoding, p, partition.end, '"')
-          bufferedReader.close()
+          parser.repositionReader(p)
+          val token = parser.consume('"')
           appendVal = token.substring(1, token.length - 1)
-          p = _pos
+          p = parser.pos
         }
       }
       finalSyntaxStack.append(appendVal)
@@ -652,6 +617,8 @@ object Partitioning {
     println("######### getEndState ############")
     println(finalSyntaxStack)
     println(finalPosStack)
+
+    parser.close()
 
     val pastEnd = pos > partition.end
 
@@ -670,7 +637,7 @@ object Partitioning {
       state: Array[String],
       options: JsonOptions
   ): (Int, Int, Int) = {
-    var dfa = options.getDFA()
+    var pda = options.getPDA()
 
     var level = 0
     var skipLevels = 0
@@ -683,14 +650,14 @@ object Partitioning {
       var response = ""
       val elem = state(i)
       if (elem.equals("[")) {
-        if (dfa.toNextStateIfArray(level) ||
-          dfa.states(dfa.currentState).stateType.equals("descendant")) {
+        if (pda.toNextStateIfArray(level) ||
+          pda.states(pda.currentState).stateType.equals("descendant")) {
           level += 1
         }
       } else if (elem.equals("{")) {
         level += 1
       } else { // key
-        response = dfa.checkToken(elem, level)
+        response = pda.checkToken(elem, level)
       }
 
       if (response.equals("accept") || response.equals("reject")) {
@@ -708,7 +675,7 @@ object Partitioning {
       i += 1
     }
 
-    return (level, skipLevels, dfa.getCurrentState())
+    return (level, skipLevels, pda.getCurrentState())
   }
 
   def fullPass(
@@ -856,7 +823,7 @@ object Partitioning {
         // println(shiftedStart, _end, level, dfaState, initialState)
         val _initialState : Array[Char] = initialState.filter(x => x.size == 1).map(x => x(0).toChar).toArray
         finalPartitions.append(
-          (new JsonInputPartition(path, shiftedStart, _end, level, dfaState, _initialState, i))
+          (new JsonInputPartition(path, options.hdfsPath, shiftedStart, _end, level, dfaState, _initialState, i))
             .asInstanceOf[InputPartition]
         )
 

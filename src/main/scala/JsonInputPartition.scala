@@ -20,12 +20,18 @@ import org.apache.spark.sql.connector.read.{InputPartition}
 import org.apache.spark.SparkContext
 import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.fs.Path
-class JsonInputPartition(val path : String, val start : Long, val end : Long, val startLevel : Int, val dfaState : Int, val initialState : Array[Char] = null, val id : Int = 0) extends InputPartition {
+class JsonInputPartition(val path : String, val hdfsPath : String, val start : Long, val end : Long, val startLevel : Int, val dfaState : Int, val initialState : Array[Char] = null, val id : Int = 0) extends InputPartition {
 
     // TODO: also add initial path (might be required in some cases for initialization [e.g. with multiple dscendent types])
     override def preferredLocations() : Array[String] = {
         var locations = Array[String]()
-        val hadoopConf = SparkContext.getOrCreate().hadoopConfiguration
+        val hadoopConf = if(hdfsPath == "local") {
+            SparkContext.getOrCreate().hadoopConfiguration
+        } else {
+            val _conf = SparkContext.getOrCreate().hadoopConfiguration
+            _conf.set("fs.defaultFS", hdfsPath)
+            _conf
+        }
         val fs = FileSystem.get(hadoopConf)
         val blockLocations = fs.getFileBlockLocations(new Path(path), start, end-start+1)
         var maxBlock = blockLocations(0)
