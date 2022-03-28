@@ -43,16 +43,16 @@ object Partitioning {
     if (hasWildcard) {
       val statues = fs.globStatus(new Path(options.filepath), filter)
       for (fileStatus <- statues) {
-        val path = fileStatus.getPath().toString()
+        val path: String = fileStatus.getPath.toString
         filePaths.append(path)
         // println(path)
       }
     } else if (isDirectory) {
       val iterator =
         fs.listFiles(new Path(options.filepath), options.recursive.toBoolean)
-      while (iterator.hasNext()) {
+      while (iterator.hasNext) {
         val status = iterator.next()
-        val path = status.getPath()
+        val path = status.getPath
         if (status.isFile && (filter == null || filter.accept(path))) {
           filePaths.append(path.toString)
           // println(path)
@@ -63,7 +63,7 @@ object Partitioning {
       // println(options.filepath)
     }
 
-    if (filePaths.length == 0)
+    if (filePaths.isEmpty)
       println("No files were found!")
 
     return filePaths.toSeq
@@ -115,7 +115,9 @@ object Partitioning {
             startIndex,
             endIndex,
             0,
-            0
+            0,
+            List[Int](),
+            List[Char]()
           )
         )
         startIndex = endIndex
@@ -162,6 +164,8 @@ def speculate(
   var start = partition.start
   var startLevel = 0
   var startState = 0
+  var partitionInitialState = List[Char]()
+  var partitionStateLevels = List[Int]()
   val speculationKeys = options.speculationKeys
   val parser = new Parser(partition.path, partition.hdfsPath, options.encoding, pos=partition.start, end=partition.end)
   val pda = options.getPDA()
@@ -187,8 +191,10 @@ def speculate(
         token = tmpToken
         partitionLevel = speculationKeys(token)._1
         partitionState = speculationKeys(token)._2
+        partitionStateLevels = speculationKeys(token)._4
+        partitionInitialState = speculationKeys(token)._5
         partitionLabel = token
-        if (partitionLevel > partitionState) {
+        if (partitionLevel > partitionInitialState.length) {
 
           shiftedEndIndex = shiftedEndIndex + parser.skipLevels(partitionLevel - partitionState) + 2
           partitionLevel = partitionState
@@ -209,10 +215,9 @@ def speculate(
     startState = partitionState
     start = shiftedEndIndex
 
-    if (startState > 0 && startState == startLevel && !skippedLevels) {
-      startState -= 1
-
-    }
+//    if (startState > 0 && startState == startLevel && !skippedLevels) {
+//      startState -= 1
+//    }
 
   }
 
@@ -222,7 +227,9 @@ def speculate(
     start,
     partition.end,
     startLevel,
-    startState
+    startState,
+    partitionStateLevels,
+    partitionInitialState
   )
 }
   def speculation(options: JsonOptions): Array[InputPartition] = {
@@ -232,18 +239,17 @@ def speculate(
       .filter(x => x._2.size == 1)
       .map(f => (f._1, f._2.head))
       .toSeq
-      .sortBy { case (k, (a, b, c)) => (c, a, b) }
+      .sortBy { case (_, (a, b, c, _, _)) => (c, a, b) }
       .reverse
-    val maxOccurrence = tokenLevelsSorted(0)._2._3
-    var speculationKeys = new HashMap[String, (Int, Int, Int)]
+    var speculationKeys = new HashMap[String, (Int, Int, Int, List[Int], List[Char])]()
     tokenLevelsSorted
       .filter(x => x._2._3 >= 1000)
       .foreach(x => {
       speculationKeys = speculationKeys + (x._1 -> x._2)
       })
     if (speculationKeys.size < 10 && tokenLevelsSorted.size >= 10) {
-      speculationKeys = new HashMap[String, (Int, Int, Int)]
-      for (i <- 0 to 10) {
+      speculationKeys = new HashMap[String, (Int, Int, Int, List[Int], List[Char])]()
+      for (i <- 0 until 10) {
         speculationKeys =
           speculationKeys + (tokenLevelsSorted(i)._1 -> tokenLevelsSorted(i)._2)
       }
@@ -253,10 +259,10 @@ def speculate(
     )
     println("KEY,LEVEL,DFA STATE,#ENCOUNTERED")
     speculationKeys.foreach({ case (k, v) =>
-      println(k + "," + v._1 + "," + v._2 + "," + v._3)
+      println(k + "," + v._1 + "," + v._2 + "," + v._3 + "," + v._4)
     })
     println("##########################################\n\n\n\n\n")
-    if(speculationKeys.size == 0) {
+    if(speculationKeys.isEmpty) {
       throw new RuntimeException("Not possible to speculate. There are no keys that occurred in only one level.")
     }
     options.speculationKeys = speculationKeys
@@ -287,6 +293,8 @@ def speculate(
           end,
           partition.startLevel,
           partition.dfaState,
+          partition.stateLevels,
+          partition.initialState,
           id=i
         )
       )
@@ -636,13 +644,12 @@ def speculate(
   def partitionLevelSkipping(
       state: Array[String],
       options: JsonOptions
-  ): (Int, Int, Int) = {
+  ): (Int, Int, Int, List[Int]) = {
     var pda = options.getPDA()
 
     var level = 0
     var skipLevels = 0
     var dfaState = 0
-
     // get level before the first rejected or accepted state
     var i = 0;
     var isComplete = false // or accepted
@@ -655,6 +662,9 @@ def speculate(
           level += 1
         }
       } else if (elem.equals("{")) {
+        if(pda.currentState == 0 && pda.states(0).value == "$") {
+          pda.toNextState()
+        }
         level += 1
       } else { // key
         response = pda.checkToken(elem, level)
@@ -675,7 +685,7 @@ def speculate(
       i += 1
     }
 
-    return (level, skipLevels, pda.getCurrentState())
+    return (level, skipLevels, pda.getCurrentState(), pda.getStateLevels)
   }
 
   def fullPass(
@@ -713,7 +723,8 @@ def speculate(
           Boolean, // isString
           Int, // Level
           Int, // skipLevels
-          Int // dfaState
+          Int, // dfaState
+          List[Int]
       )
     ]()
 
@@ -723,7 +734,7 @@ def speculate(
           (String, Long, Long, ArrayBuffer[String], ArrayBuffer[Long], Boolean)
         ]
 
-      val (level, skipLevels, dfaState) =
+      val (level, skipLevels, dfaState, stateLevels) =
         partitionLevelSkipping(prevStack.toArray, options)
 
       // println("####### " + i + " Start: " + start + " End: " + end)
@@ -751,7 +762,8 @@ def speculate(
           isString,
           level,
           skipLevels,
-          dfaState
+          dfaState,
+          stateLevels
         )
       )
       prevStack = stack
@@ -776,7 +788,8 @@ def speculate(
         isString,
         level,
         skipLevels,
-        dfaState
+        dfaState,
+        stateLevels
       ) =
         partitionInitialStates(i)
 
@@ -794,7 +807,8 @@ def speculate(
           _,
           _,
           _,
-          _
+          _,
+          stateLevels2
         ) =
           partitionInitialStates(j)
 
@@ -823,7 +837,7 @@ def speculate(
         // println(shiftedStart, _end, level, dfaState, initialState)
         val _initialState : Array[Char] = initialState.filter(x => x.size == 1).map(x => x(0).toChar).toArray
         finalPartitions.append(
-          (new JsonInputPartition(path, options.hdfsPath, shiftedStart, _end, level, dfaState, _initialState, i))
+          (new JsonInputPartition(path, options.hdfsPath, shiftedStart, _end, level, dfaState, stateLevels, _initialState.toList, i))
             .asInstanceOf[InputPartition]
         )
 

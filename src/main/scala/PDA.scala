@@ -86,6 +86,15 @@ class PDA() {
     tokenStates.toArray
   }
 
+  def setLevels(levels : List[Int]) : Unit = {
+    for(i <- levels.indices) {
+      states(i).level = levels(i)
+    }
+  }
+  def getStateLevels : List[Int] = {
+    states.map(s => s.level).toList
+  }
+
   def setState(stateId: Int) {
     currentState = stateId;
   }
@@ -95,15 +104,18 @@ class PDA() {
   def toNextStateIfArray(level : Int) : Boolean = {
     if(currentState < states.size) {
       if(states(currentState).stateType.equals("array")){
-        states(currentState).level = level
-        currentState = currentState+1
+        states(currentState).level = level+1
+        if(currentState+1 < states.length)
+          currentState = currentState+1
         return true
       }
     }
     return false
   }
   def toPrevState(level : Int) {
-    if(states(currentState-1).level == level) {
+    if(states(currentState-1).stateType.equals("array") && level < states(currentState-1).level) {
+      currentState -= 2
+    } else if(level <= states(currentState-1).level &&  !(states(currentState-1).stateType.equals("array") && states(currentState-1).level == level)) {
       currentState = currentState-1
     }
   }
@@ -124,7 +136,7 @@ class PDA() {
     // input.equals(states(currentState).value),
     // currentState == states.size))
     if(states(currentState).stateType.equals("descendant")) {
-      if(level > states(currentState).level && input.equals(states(currentState).value)) {
+      if(level > states(currentState-1).level && input.equals(states(currentState).value)) {
         toNextState()
         if(currentState == states.size) {
           currentState -= 1
@@ -135,13 +147,12 @@ class PDA() {
       }
       return "continue"
     } else {
-      if(level == states(currentState).level+1 && input.equals(states(currentState).value)){
-        toNextState()
-        if(currentState == states.size) {
-          currentState -= 1
+      if(level == states(currentState-1).level+1 && input.equals(states(currentState).value)){
+        if(currentState == states.length-1) {
           return "accept"
         } else {
           states(currentState).level = level
+          toNextState()
           return "continue"
         }
       }
@@ -150,8 +161,8 @@ class PDA() {
   }
 
   def checkArray() : Boolean = {
-    if(currentState == states.size){
-      if(states(currentState-1).stateType.equals("array")) {
+    if(currentState+1 == states.size){
+      if(states(currentState).stateType.equals("array") && states(currentState).level > getPrevStateLevel()) {
         return true
       }
     }

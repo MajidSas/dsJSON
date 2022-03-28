@@ -25,23 +25,23 @@ import scala.collection.mutable.ArrayBuffer
 object SchemaInference {
 
 
-  def getEncounteredTokens(
-      options: JsonOptions,
-      schema: StructType
-  ): HashMap[String, Set[(Int, Int, Int)]] = {
-    // extract token levels from query, encountered tokens, and schema
-    val parser = new Parser()
-    var pda = options.getPDA()
-    var tokenLevels = HashMap[String, Set[(Int, Int, Int)]]()
-    var maxQueryLevel = pda.states.length
-    for (token <- pda.getTokens()) {
-      for (state <- pda.getTokenStates(token)) {
-        tokenLevels = parser.addToken(tokenLevels, token, state, state)
-      }
-    }
-    return parser.mergeMapSet(tokenLevels, options.encounteredTokens)
-
-  }
+//  def getEncounteredTokens(
+//      options: JsonOptions,
+//      schema: StructType
+//  ): HashMap[String, Set[(Int, Int, Int, List[Char])]] = {
+//    // extract token levels from query, encountered tokens, and schema
+//    val parser = new Parser()
+//    var pda = options.getPDA()
+//    var tokenLevels = HashMap[String, Set[(Int, Int, Int)]]()
+//    var maxQueryLevel = pda.states.length
+//    for (token <- pda.getTokens()) {
+//      for (state <- pda.getTokenStates(token)) {
+//        tokenLevels = parser.addToken(tokenLevels, token, state, state)
+//      }
+//    }
+//    return parser.mergeMapSet(tokenLevels, options.encounteredTokens)
+//
+//  }
 
   def getArrayType(
       t: Any,
@@ -165,9 +165,9 @@ object SchemaInference {
       useWhole: Boolean,
       getTokens: Boolean,
       jsonOptions: JsonOptions
-  ): (HashMap[String, Any], HashMap[String, Set[(Int, Int, Int)]], Int) = {
+  ): (HashMap[String, Any], HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]], Int) = {
     var parsedRecords = new ArrayBuffer[Any];
-    var encounteredTokens = HashMap[String, Set[(Int, Int, Int)]]()
+    var encounteredTokens = HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]()
 
     val projection = jsonOptions.getProjectionTree()("*")
 
@@ -180,10 +180,10 @@ object SchemaInference {
       partition.start,
       partition.end
     )
-    parser.initSyntaxStack(partition.startLevel, partition.initialState)
+    parser.initSyntaxStack(partition.initialState)
     parser.pda.setState(partition.dfaState)
+    parser.pda.setLevels(partition.stateLevels)
     val lastQueryToken = parser.pda.states.last.value
-    var pos: Long = partition.start
     var found: Boolean = true
     var mergedMaps = new HashMap[String, Any]()
     var count = 0
@@ -197,6 +197,9 @@ object SchemaInference {
 //      println(value)
       found = _found
       count += 1
+      if(getTokens) {
+        encounteredTokens = parser.mergeMapSet(encounteredTokens, recordEncounteredTokens)
+      }
       if (value != null) {
         val _value = if (value.isInstanceOf[HashMap[_, _]]) {
           value.asInstanceOf[HashMap[String, Any]]
@@ -205,16 +208,14 @@ object SchemaInference {
         }
         mergedMaps = mergedMaps.merged(_value)(reduceKey)
 
-        encounteredTokens =
-          parser.mergeMapSet(encounteredTokens, recordEncounteredTokens)
-        encounteredTokens = parser.mergeMapSet(
-                encounteredTokens,
-                parser.getEncounteredTokens(
-                  value,
-                  parser.pda.currentState,
-                  parser.pda.currentState
-                )
-              )
+//        encounteredTokens = parser.mergeMapSet(
+//                encounteredTokens,
+//                parser.getEncounteredTokens(
+//                  value,
+//                  parser.pda.currentState,
+//                  parser.pda.currentState,
+//                )
+//              )
       }
     }
 
@@ -223,16 +224,14 @@ object SchemaInference {
     return (mergedMaps, encounteredTokens, count)
   }
   def inferUsingStart(jsonOptions: JsonOptions): StructType = {
-    val parser = new Parser()
-    var encounteredTokens = HashMap[String, Set[(Int, Int, Int)]]()
+    var encounteredTokens = HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]()
     var mergedMaps = new HashMap[String, Any]()
-    var pda = jsonOptions.getPDA()
     val filePaths = jsonOptions.filePaths
     val limit = 1000
     var nParsedRecords = 0
     var i = 0
     while (nParsedRecords < limit && i < filePaths.size) {
-      val partition = new JsonInputPartition(filePaths(i), jsonOptions.hdfsPath, 0, -1, 0, 0)
+      val partition = new JsonInputPartition(filePaths(i), jsonOptions.hdfsPath, 0, -1, 0, 0, List[Int](), List[Char]())
       val (schemaMap, _encounteredTokens, _nParsedRecords) =
         inferOnPartition(
           partition,
@@ -243,8 +242,9 @@ object SchemaInference {
         )
       mergedMaps = mergedMaps.merged(schemaMap)(reduceKey)
       nParsedRecords += _nParsedRecords
-      encounteredTokens =
-        parser.mergeMapSet(encounteredTokens, _encounteredTokens)
+      encounteredTokens = _encounteredTokens
+//      encounteredTokens =
+//        parser.mergeMapSet(encounteredTokens, _encounteredTokens)
       i += 1
     }
 
@@ -257,7 +257,6 @@ object SchemaInference {
   }
 
   def fullInference(jsonOptions: JsonOptions): StructType = {
-    var pda = jsonOptions.getPDA()
     val partitions = jsonOptions.partitions
     val sc = SparkContext.getOrCreate()
     val stageOutput = sc

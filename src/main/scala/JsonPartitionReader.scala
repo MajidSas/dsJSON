@@ -79,8 +79,9 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
 //    filterSize = _filterSize
     // println(options.encounteredTokens)
     val initialState = inputPartition.initialState
-    parser.initSyntaxStack(startLevel, initialState)
+    parser.initSyntaxStack(initialState)
     parser.pda.setState(inputPartition.dfaState)
+    parser.pda.setLevels(inputPartition.stateLevels)
     println(parser.syntaxStackArray)
     println(parser.pda)
   }

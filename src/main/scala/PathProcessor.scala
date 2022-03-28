@@ -15,9 +15,10 @@
  */
 
 package edu.ucr.cs.bdlab
+import org.apache.spark.sql.types._
+
 import scala.collection.immutable.HashMap
 import scala.collection.mutable.ArrayBuffer
-import org.apache.spark.sql.types._
 
 object PathProcessor {
   def findMatchingBracket(str : String, isSquare : Boolean = false) : Int = {
@@ -127,12 +128,12 @@ object PathProcessor {
     path.toArray
   }
 
-  def convertToProjectionTree(queryMap : HashMap[String, (Boolean, String, Any, Any)], parentKey : String = ""): HashMap[String, ProjectionNode] = {
+  def finalizeProjectionTree(projectionTree: HashMap[String, ProjectionNode], parentKey : String = ""): HashMap[String, ProjectionNode] = {
     var tree = new HashMap [String, ProjectionNode]()
-    for((_k,v) <- queryMap) {
-      val k = if(parentKey.isEmpty) { "*" } else { _k }
-      val acceptAll = v._1
-      val filter = v._2
+    for((_k,node) <- projectionTree) {
+      val k = if(parentKey == "") { "*" } else { _k }
+      val acceptAll = node.acceptAll
+      val filter = node.filterString
       var rowMap = new HashMap[String, (Int, DataType, Any)]()
       val filterVariables = if(filter == "") { new HashMap[String, Variable]() } else {
         val filterVariableNames = FilterProcessor.extractVariables(filter)
@@ -141,11 +142,10 @@ object PathProcessor {
         }
         FilterProcessor.parseExpr(filter, rowMap)._2
       }
+      val childrenTree : HashMap[String, ProjectionNode] =finalizeProjectionTree(node.childrenTree, k)
+      val descendantsTree : HashMap[String, ProjectionNode] =finalizeProjectionTree(node.descendantsTree, k)
 
-      val subTree1 : HashMap[String, ProjectionNode] = if(v._3 == null) { new HashMap [String, ProjectionNode]() } else { convertToProjectionTree(new HashMap[String, (Boolean, String, Any, Any)]()++v._3.asInstanceOf[scala.collection.mutable.HashMap[String,(Boolean, String, Any, Any)]], k) }
-      val subTree2 : HashMap[String, ProjectionNode] = if(v._4 == null) { new HashMap [String, ProjectionNode]() } else { convertToProjectionTree(new HashMap[String, (Boolean, String, Any, Any)]()++v._4.asInstanceOf[scala.collection.mutable.HashMap[String,(Boolean, String, Any, Any)]], k) }
-
-      tree = tree + (k -> new ProjectionNode(acceptAll, parentKey, filterVariables, rowMap, subTree1, subTree2))
+      tree = tree + (k -> new ProjectionNode(acceptAll, parentKey, filterVariables, rowMap, childrenTree, descendantsTree))
     }
     tree
   }
@@ -166,11 +166,11 @@ object PathProcessor {
 //      tt.foreach(t => print(t))
 //      println()
 //    })
-    var queryMap = new scala.collection.mutable.HashMap[String, (Boolean, String, Any, Any)]
-
+//    val queryMap = new scala.collection.mutable.HashMap[String, (Boolean, String, Any, Any)]
+    val queryTree = new ProjectionNode()
+    var nestedQueryMap = new scala.collection.mutable.HashMap[String, (Boolean, String, Any, Any)]
     for(i <- tokenizedQueries.indices) {
-      var curQueryMap = queryMap
-      var curNestedQueryMap = queryMap
+      var curProjection = queryTree
       val ts = tokenizedQueries(i)
       for(j <- dfaQueryTokens.length-1 until ts.length) {
         var isNested = false
@@ -182,35 +182,33 @@ object PathProcessor {
         } else { ts(j) }
         var filter = if(filters(i)(j) == "*") { "" } else {filters(i)(j)}
         var acceptAll = j == ts.length-1
-        var subMap = new scala.collection.mutable.HashMap[String, (Boolean, String, Any, Any)]()
-        var nestedSubMap = new scala.collection.mutable.HashMap[String, (Boolean, String, Any, Any)]()
-        if(curQueryMap contains token) {
-          val curFilter = curQueryMap(token)._2
-          filter = if(curFilter == "" || filter == "") { curFilter } else { curFilter + " && " + filter }
-          acceptAll =  acceptAll || curQueryMap(token)._1
-          subMap = curQueryMap(token)._3.asInstanceOf[scala.collection.mutable.HashMap[String,(Boolean, String, Any, Any)]]
-        } else if(isNested && curNestedQueryMap.contains(token)) {
-          nestedSubMap = curNestedQueryMap(token)._4.asInstanceOf[scala.collection.mutable.HashMap[String,(Boolean, String, Any, Any)]]
-        }
-        if(isNested) {
-          curNestedQueryMap(token)= (
-            acceptAll,
-            filter,
-            subMap,
-            nestedSubMap
-          )
-        } else {
-          curQueryMap(token)= (
-            acceptAll,
-            filter,
-            subMap,
-            nestedSubMap
-          )
-        }
-        curQueryMap = subMap
-        curNestedQueryMap = nestedSubMap
+        val selectedSubTree = if(isNested) { curProjection.descendantsTree } else { curProjection.childrenTree }
+
+          if(selectedSubTree contains token) {
+            val curFilter = selectedSubTree(token).filterString
+            filter = if(curFilter == "" || filter == "") { curFilter } else { curFilter + " && " + filter }
+            acceptAll =  acceptAll || selectedSubTree(token).acceptAll
+            curProjection = selectedSubTree(token)
+            curProjection.acceptAll = acceptAll
+            curProjection.filterString = filter
+          } else {
+            val newProjection = selectedSubTree + ((token, new ProjectionNode(
+              acceptAll = acceptAll,
+              filterString = filter
+            )))
+            if(isNested) {
+              curProjection.descendantsTree = newProjection
+              curProjection = curProjection.descendantsTree(token)
+            } else {
+              curProjection.childrenTree = newProjection
+              curProjection = curProjection.childrenTree(token)
+            }
+          }
       }
     }
-    convertToProjectionTree(new HashMap[String, (Boolean, String, Any, Any)]() ++ queryMap)
+    if(queryTree.childrenTree.nonEmpty)
+      finalizeProjectionTree(queryTree.childrenTree)
+    else
+      finalizeProjectionTree(queryTree.descendantsTree)
   }
 }

@@ -43,8 +43,8 @@ class JsonOptions() extends Serializable {
   var keepIndex = false
   var encoding = "UTF-8"
   var hdfsPath = "local"
-  var encounteredTokens: HashMap[String, Set[(Int,Int,Int)]] = _
-  var speculationKeys: HashMap[String, (Int,Int,Int)] = _
+  var encounteredTokens: HashMap[String, Set[(Int,Int,Int, List[Int], List[Char])]] = _
+  var speculationKeys: HashMap[String, (Int,Int,Int, List[Int], List[Char])] = _
   var filePaths : Seq[String] = _
   var partitions : Array[InputPartition] = _
   var rowMap: HashMap[String, (Int, DataType, Any)] = _

@@ -7,8 +7,9 @@ class ProjectionNode(var acceptAll: Boolean = false,
                      val parentKey: String = "",
                      val filterVariables: HashMap[String, Variable] = new HashMap[String, Variable](),
                      val rowMap: HashMap[String, (Int, DataType, Any)] = new HashMap[String, (Int, DataType, Any)](),
-                     val childrenTree: HashMap[String, ProjectionNode] = new HashMap[String, ProjectionNode](),
-                     var descendantsTree: HashMap[String, ProjectionNode] = new HashMap[String, ProjectionNode]()
+                     var childrenTree: HashMap[String, ProjectionNode] = new HashMap[String, ProjectionNode](),
+                     var descendantsTree: HashMap[String, ProjectionNode] = new HashMap[String, ProjectionNode](),
+                     var filterString: String = ""
                     ) {
   val hasFilter : Boolean = filterVariables.nonEmpty
   var notDescending = true
