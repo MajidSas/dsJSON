@@ -30,15 +30,9 @@
   <component name="ChangeListManager">
     <list default="true" id="dad330fe-0e37-4c65-b4d0-44e5f4a2bf92" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonInputPartition.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonInputPartition.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonOptions.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonOptions.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonPartitionReader.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonPartitionReader.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/PDA.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/PDA.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/Parser.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Parser.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/Partitioning.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Partitioning.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/PathProcessor.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/PathProcessor.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/ProjectionNode.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/ProjectionNode.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/SchemaInference.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/SchemaInference.scala" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -159,25 +153,25 @@
           <option name="timeStamp" value="71" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="scala-line">
-          <condition expression="key.equals(&quot;shipping&quot;)" language="Scala" />
-          <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
-          <line>1225</line>
-          <option name="timeStamp" value="153" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" type="scala-line">
           <url>file://$PROJECT_DIR$/src/main/scala/FilterProcessor.scala</url>
           <line>207</line>
           <option name="timeStamp" value="154" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="scala-line">
-          <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
-          <line>1355</line>
-          <option name="timeStamp" value="155" />
+          <url>file://$PROJECT_DIR$/src/main/scala/JsonScanBuilder.scala</url>
+          <line>53</line>
+          <option name="timeStamp" value="162" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="scala-line">
+          <url>file://$PROJECT_DIR$/src/main/scala/SchemaInference.scala</url>
+          <line>185</line>
+          <option name="timeStamp" value="163" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="scala-line">
+          <condition expression="key.equals(&quot;secondDay&quot;)" language="Scala" />
           <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
-          <line>478</line>
-          <option name="timeStamp" value="156" />
+          <line>1287</line>
+          <option name="timeStamp" value="172" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

@@ -29,6 +29,7 @@ import java.io.BufferedReader
 import java.nio.charset.{Charset, CodingErrorAction}
 import scala.collection.immutable.HashMap
 import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.Queue
 
 
 class Parser(val filePath : String = "",
@@ -46,6 +47,8 @@ class Parser(val filePath : String = "",
   var stackPos : Int = -1
   var maxStackPos : Int = -1
   var count : Long = 0
+  val parsedRecords : Queue[Any] = Queue[Any]()
+  var nParsedRecords : Int = 0
   def getInputStream: (FSDataInputStream, Long) = {
     if(filePath == "") return (null, -1)
     val conf = if(hdfsPath == "local") {
@@ -340,12 +343,21 @@ class Parser(val filePath : String = "",
   ): (Boolean, Any, HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]) = {
     var encounteredTokens = HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]()
     while (true) {
+      if(nParsedRecords > 0) {
+        nParsedRecords-=1
+        val record =  parsedRecords.dequeue()
+//        parsedRecords.remove(0)
+        if(getTypes) {
+          return (true, record, encounteredTokens)
+        } else {
+          count+=1
+          return (true, finalizeValue(record, partitionId, projection.rowMap), encounteredTokens)
+        }
+      }
       if (pos+1 >= end) {
         return (false, null, encounteredTokens)
       }
-      if(partitionId > 0) {
-        Unit
-      }
+
       val i = reader.read()
       val c = i.toChar;
       pos += charSize(i)
@@ -373,10 +385,6 @@ class Parser(val filePath : String = "",
               )
             )
           }
-          value match {
-            case Some(v) =>    return (true, v, encounteredTokens)
-            case None => {}
-          }
         } else {
           val value = _parse(
             "",
@@ -384,12 +392,6 @@ class Parser(val filePath : String = "",
             projection.filterVariables,
             c
           )
-          value match {
-            case Some(v) =>
-              count+=1
-              return (true, finalizeValue(v, partitionId, projection.rowMap), encounteredTokens)
-            case None => {}
-          }
         }
       } else if (c != ',' && c != ']' && (c == '[' || pda.states(pda.currentState).stateType.equals("array"))) {
         if(c != '[') { // happens only if user provided a query that doesn't match the data
@@ -475,23 +477,12 @@ class Parser(val filePath : String = "",
                 )
               }
 
-              value match {
-                case Some(v) =>
-                  return (true, v, encounteredTokens)
-                case None => {}
-              }
             } else {
               val value = _parse(
                 token,
                 projection.rowMap,
                 projection.filterVariables
               )
-              value match {
-                case Some(v) =>
-                  count += 1
-                  return (true, finalizeValue(v, partitionId, projection.rowMap), encounteredTokens)
-                case None => {}
-              }
             }
           } else if (pdaResponse.equals("reject")) {
 
@@ -1117,30 +1108,44 @@ class Parser(val filePath : String = "",
         case '"' => {
           val prevPos = pos
           skip(c)
-          if(pos-prevPos <= 1) { return Some((NullType, null)) } // empty strings are treated as NullType (this solves an issue in one dataset, where they provide an empty string for missing values
-          return Some((StringType, null))
+          val t = if(pos-prevPos <= 1) {  (NullType, null) } else { (StringType, null) } // empty strings are treated as NullType (this solves an issue in one dataset, where they provide an empty string for missing values
+          parsedRecords.enqueue(t)
+          nParsedRecords+=1
+          return Some(t)
         }
         case 'n' => {
           reader.skip(3)
           pos += stringSize("ull")
+          parsedRecords.enqueue((NullType, null))
+          nParsedRecords+=1
           return Some((NullType, null))
         }
         case 'f' => {
           reader.skip(4)
           pos += stringSize("alse")
+          parsedRecords.enqueue((BooleanType, null))
+          nParsedRecords+=1
           return Some((BooleanType, null))
         }
         case 't' => {
           reader.skip(3)
           pos += stringSize("rue")
+          parsedRecords.enqueue((BooleanType, null))
+          nParsedRecords+=1
           return Some((BooleanType, null))
         }
         case numRegExp() => {
           val str= consume(c)
-          if(!(str matches "\\d+"))
+          if(!(str matches "\\d+")) {
+            parsedRecords.enqueue((DoubleType, null))
+            nParsedRecords+=1
             return Some((DoubleType, null))
-          else
+          }
+          else {
+            parsedRecords.enqueue((LongType, null))
+            nParsedRecords+=1
             return Some((LongType, null))
+          }
           // val newPos = skip(reader, encoding, pos, end, c)
         }
         case _ => {} // these are skipped (e.g. whitespace)
@@ -1364,6 +1369,10 @@ class Parser(val filePath : String = "",
           if(projection.hasFilter && predicateValues(0) == false) {
             return None
           } else {
+            if(projection.isOutputNode) {
+              parsedRecords.enqueue(map)
+              nParsedRecords+=1
+            }
             return Some(map)
           }
         }
@@ -1462,12 +1471,24 @@ class Parser(val filePath : String = "",
         }
         case ']' => {
           if(mergedMaps.nonEmpty) {
+            if(projection.isOutputNode) {
+              parsedRecords.enqueue((ArrayType(NullType), mergedMaps))
+              nParsedRecords+=1
+            }
             return Some((ArrayType(NullType), mergedMaps))
           }
           if(mergedArrType._2 != NullType) {
+            if(projection.isOutputNode) {
+              parsedRecords.enqueue((ArrayType(NullType), mergedArrType))
+              nParsedRecords+=1
+            }
             return Some((ArrayType(NullType), mergedArrType))
           }
           if(projection.notDescending && selectedType != NullType) {
+            if(projection.isOutputNode) {
+              parsedRecords.enqueue((ArrayType(NullType), selectedType))
+              nParsedRecords+=1
+            }
             return Some((ArrayType(NullType), selectedType))
           }
           return None

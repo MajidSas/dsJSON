@@ -128,11 +128,12 @@ object PathProcessor {
     path.toArray
   }
 
-  def finalizeProjectionTree(projectionTree: HashMap[String, ProjectionNode], parentKey : String = ""): HashMap[String, ProjectionNode] = {
+  def finalizeProjectionTree(projectionTree: HashMap[String, ProjectionNode], parentKey : String = "", parentIsOutput : Boolean = false): HashMap[String, ProjectionNode] = {
     var tree = new HashMap [String, ProjectionNode]()
     for((_k,node) <- projectionTree) {
       val k = if(parentKey == "") { "*" } else { _k }
       val acceptAll = node.acceptAll
+      val isOutputNode = !parentIsOutput && ((node.childrenTree.size + node.descendantsTree.size) > 1 || node.acceptAll)
       val filter = node.filterString
       var rowMap = new HashMap[String, (Int, DataType, Any)]()
       val filterVariables = if(filter == "") { new HashMap[String, Variable]() } else {
@@ -142,10 +143,10 @@ object PathProcessor {
         }
         FilterProcessor.parseExpr(filter, rowMap)._2
       }
-      val childrenTree : HashMap[String, ProjectionNode] =finalizeProjectionTree(node.childrenTree, k)
-      val descendantsTree : HashMap[String, ProjectionNode] =finalizeProjectionTree(node.descendantsTree, k)
+      val childrenTree : HashMap[String, ProjectionNode] =finalizeProjectionTree(node.childrenTree, k, isOutputNode || parentIsOutput)
+      val descendantsTree : HashMap[String, ProjectionNode] =finalizeProjectionTree(node.descendantsTree, k, isOutputNode || parentIsOutput)
 
-      tree = tree + (k -> new ProjectionNode(acceptAll, parentKey, filterVariables, rowMap, childrenTree, descendantsTree))
+      tree = tree + (k -> new ProjectionNode(acceptAll, isOutputNode, parentKey, filterVariables, rowMap, childrenTree, descendantsTree))
     }
     tree
   }
