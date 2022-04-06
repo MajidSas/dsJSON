@@ -136,17 +136,17 @@ object PathProcessor {
       val isOutputNode = !parentIsOutput && ((node.childrenTree.size + node.descendantsTree.size) > 1 || node.acceptAll)
       val filter = node.filterString
       var rowMap = new HashMap[String, (Int, DataType, Any)]()
-      val filterVariables = if(filter == "") { new HashMap[String, Variable]() } else {
-        val filterVariableNames = FilterProcessor.extractVariables(filter)
+      val (filterVariables, nPredicates) = if(filter == "") { (new HashMap[String, Variable](), 0)} else {
+        val filterVariableNames = FilterProcessor.extractVariables(filter).distinct
         for(i <- filterVariableNames.indices) {
           rowMap = rowMap + (filterVariableNames(i) -> (i, null, null))
         }
-        FilterProcessor.parseExpr(filter, rowMap)._2
+        (FilterProcessor.parseExpr(filter, rowMap)._2, FilterProcessor.parseExpr(filter, rowMap)._3+1)
       }
       val childrenTree : HashMap[String, ProjectionNode] =finalizeProjectionTree(node.childrenTree, k, isOutputNode || parentIsOutput)
       val descendantsTree : HashMap[String, ProjectionNode] =finalizeProjectionTree(node.descendantsTree, k, isOutputNode || parentIsOutput)
 
-      tree = tree + (k -> new ProjectionNode(acceptAll, isOutputNode, parentKey, filterVariables, rowMap, childrenTree, descendantsTree))
+      tree = tree + (k -> new ProjectionNode(acceptAll, isOutputNode, parentKey, filterVariables, nPredicates, rowMap, childrenTree, descendantsTree))
     }
     tree
   }

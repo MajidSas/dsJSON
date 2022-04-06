@@ -159,6 +159,19 @@ object SchemaInference {
       return (k, (selectType(t1, t2), null))
     }
   }
+
+  def getOutputNodeName(projection : ProjectionNode, name : String = "*") : String = {
+    if(projection.isOutputNode) {
+      return name
+    }
+    for((k,v) <- projection.childrenTree) {
+        return getOutputNodeName(v, k)
+    }
+    for((k,v) <- projection.descendantsTree) {
+      return getOutputNodeName(v, k)
+    }
+    return name // correct projection tree wouldn't reach this statement
+  }
   def inferOnPartition(
       partition: JsonInputPartition,
       limit: Int,
@@ -183,7 +196,9 @@ object SchemaInference {
     parser.initSyntaxStack(partition.initialState)
     parser.pda.setState(partition.dfaState)
     parser.pda.setLevels(partition.stateLevels)
-    val lastQueryToken = parser.pda.states.last.value
+    var lastQueryToken = getOutputNodeName(projection)
+      if (lastQueryToken == "*")
+        lastQueryToken = parser.pda.states.last.value
     var found: Boolean = true
     var mergedMaps = new HashMap[String, Any]()
     var count = 0

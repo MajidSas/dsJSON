@@ -33,6 +33,7 @@
       <change beforePath="$PROJECT_DIR$/src/main/scala/Parser.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Parser.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/PathProcessor.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/PathProcessor.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/ProjectionNode.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/ProjectionNode.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/SchemaInference.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/SchemaInference.scala" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -148,11 +149,6 @@
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" type="scala-line">
-          <url>file://$PROJECT_DIR$/src/main/scala/Partitioning.scala</url>
-          <line>305</line>
-          <option name="timeStamp" value="71" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" type="scala-line">
           <url>file://$PROJECT_DIR$/src/main/scala/FilterProcessor.scala</url>
           <line>207</line>
           <option name="timeStamp" value="154" />
@@ -163,21 +159,26 @@
           <option name="timeStamp" value="162" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="scala-line">
-          <url>file://$PROJECT_DIR$/src/main/scala/SchemaInference.scala</url>
-          <line>185</line>
-          <option name="timeStamp" value="163" />
+          <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
+          <line>1397</line>
+          <option name="timeStamp" value="191" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="scala-line">
-          <condition expression="key.equals(&quot;secondDay&quot;)" language="Scala" />
           <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
-          <line>1287</line>
-          <option name="timeStamp" value="172" />
+          <line>1393</line>
+          <option name="timeStamp" value="193" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="scala-line">
+          <url>file://$PROJECT_DIR$/src/main/scala/PathProcessor.scala</url>
+          <line>143</line>
+          <option name="timeStamp" value="197" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
     <pin-to-top-manager>
       <pinned-members>
         <PinnedItemInfo parentTag="scala.Tuple2" memberName="_2" />
+        <PinnedItemInfo parentTag="edu.ucr.cs.bdlab.Variable" memberName="parents" />
       </pinned-members>
     </pin-to-top-manager>
     <watches-manager>
