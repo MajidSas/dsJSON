@@ -17,4 +17,8 @@ class ProjectionNode(var acceptAll: Boolean = false,
   var notDescending = true
   def hasDescendants : Boolean = descendantsTree.nonEmpty
   def size : Int = descendantsTree.size + childrenTree.size
+  var outputsRowMap : HashMap[String, (Int, DataType, Any)] = new HashMap[String, (Int, DataType, Any)]()
+  var sqlFilterVariables : HashMap[String, Variable] = new HashMap[String, Variable]()
+  var nSQLPredicates : Int = 0
+  def hasSqlFilter : Boolean = nSQLPredicates > 0
 }

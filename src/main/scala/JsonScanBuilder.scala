@@ -63,16 +63,16 @@ class JsonScanBuilder(val schema : StructType, val options :  JsonOptions) exten
         }
         options.setFilter(filterString)
 
-        val filterKeys = """(@.\w+)""".r.findAllMatchIn(options.filterString).toList.map(_.toString.substring(2))
-        val existingNames = _requiredSchema.fieldNames
-        for(key <- filterKeys) {
-          if(!(existingNames contains key))
-          _requiredSchema = _requiredSchema.add(schema.apply(key))
-        }
+//        val filterKeys = """(@.\w+)""".r.findAllMatchIn(options.filterString).toList.map(_.toString.substring(2))
+//        val existingNames = _requiredSchema.fieldNames
+//        for(key <- filterKeys) {
+//          if(!(existingNames contains key))
+//          _requiredSchema = _requiredSchema.add(schema.apply(key))
+//        }
 
 
 
-      options.rowMap = schemaToRowMap(_requiredSchema)
+//      options.rowMap = schemaToRowMap(_requiredSchema)
 
 
 

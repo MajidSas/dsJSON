@@ -22,6 +22,9 @@ import org.apache.spark.sql.catalyst.util._
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.types._
 
+import scala.collection.immutable.HashMap
+import scala.collection.mutable
+
 
 class JsonPartitionReader extends PartitionReader[InternalRow] {
   var inputPartition: JsonInputPartition = _
@@ -53,7 +56,24 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       inputPartition.end
     )
     projection = options.getProjectionTree()("*")
-
+    val (variables, nPredicates) = if(options.filterString != "") {
+       FilterProcessor.parseExpr(options.filterString, options.rowMap).asInstanceOf[(HashMap[String, Variable], Int)]
+    } else { (new HashMap[String, Variable](), 0) }
+    // assign to outputNode
+    var currentNode = projection
+    val nodeQueue = new mutable.Queue[ProjectionNode]()
+    while(!currentNode.isOutputNode) {
+      for((k,v) <- currentNode.childrenTree) {
+        nodeQueue.enqueue(v)
+      }
+      for((k,v) <- currentNode.descendantsTree) {
+        nodeQueue.enqueue(v)
+      }
+      currentNode = nodeQueue.dequeue()
+    }
+    currentNode.sqlFilterVariables = variables
+    currentNode.nSQLPredicates = nPredicates
+    currentNode.outputsRowMap = options.rowMap
     val filePath = inputPartition.path
     // Initialize partition
     partitionId = inputPartition.id
@@ -70,7 +90,7 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       inputPartition.startLevel,
       inputPartition.dfaState
     )
-    println("Filters: "+options.filterString)
+//    println("Filters: "+options.filterString)
 //    val (_, _filterVariables, _filterSize) : (Any, HashMap[String, Variable], Int) =  FilterProcessor.parseExpr(options.filterString, options.rowMap)
 //    filterVariables = _filterVariables
 //    rowMap = _rowMap
@@ -86,13 +106,13 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
     println(parser.pda)
   }
 
-  override def next() = {
+  override def next(): Boolean = {
 
     val (hasNext, _value, _) = parser.getNextMatch(
       projection,
-      false,
-      false,
-      keepExtras,
+      getTokens = false,
+      getTypes = false,
+      keepExtras = keepExtras,
       partitionId
     )
     // if(hasNext == false || value == null) {

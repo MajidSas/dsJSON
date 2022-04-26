@@ -4,6 +4,8 @@
 
 .bloop/
 .metals/
+.idea/
+.bsp/
 .scalafmt.conf
 2
 project

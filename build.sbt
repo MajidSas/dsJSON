@@ -1,4 +1,4 @@
-name := "jsondsp"
+name := "dsJSON"
 
 version := "0.1"
 
