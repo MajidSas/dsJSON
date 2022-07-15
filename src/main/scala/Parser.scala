@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 University of California, Riverside
+ * Copyright ...
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,10 @@ package edu.ucr.cs.bdlab
 
 import SchemaInference.reduceKey
 
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, FileSystem, Path}
-import org.apache.spark.SparkContext
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
@@ -28,33 +29,37 @@ import org.apache.spark.unsafe.types.UTF8String
 import java.io.BufferedReader
 import java.nio.charset.{Charset, CodingErrorAction}
 import scala.collection.immutable.HashMap
-import scala.collection.mutable.ArrayBuffer
-import scala.collection.mutable.Queue
+import scala.collection.mutable.{ArrayBuffer, Queue}
 
 
-class Parser(val filePath : String = "",
-             val hdfsPath : String = "local",
-             val encoding : String = "UTF8",
-             var pda : PDA = null,
-             var pos : Long = 0,
-             var end : Long = -1
+class Parser(val filePath: String = "",
+             val hdfsPath: String = "local",
+             val encoding: String = "UTF8",
+             var pda: PDA = null,
+             var pos: Long = 0,
+             var end: Long = -1
             ) {
 
-  var (inputStream, fileSize) : (FSDataInputStream, Long) = getInputStream
-  end = if(end == -1L) {fileSize} else { end }
-  var reader : BufferedReader = getBufferedReader(pos)
+  var (inputStream, fileSize): (FSDataInputStream, Long) = getInputStream
+  end = if (end == -1L) {
+    fileSize
+  } else {
+    end
+  }
+  var reader: BufferedReader = getBufferedReader(pos)
   var syntaxStackArray: ArrayBuffer[Char] = new ArrayBuffer[Char]()
-  var stackPos : Int = -1
-  var maxStackPos : Int = -1
-  var count : Long = 0
-  val parsedRecords : Queue[Any] = Queue[Any]()
-  var nParsedRecords : Int = 0
+  var stackPos: Int = -1
+  var maxStackPos: Int = -1
+  var count: Long = 0
+  val parsedRecords: Queue[Any] = Queue[Any]()
+  var nParsedRecords: Int = 0
+
   def getInputStream: (FSDataInputStream, Long) = {
-    if(filePath == "") return (null, -1)
-    val conf = if(hdfsPath == "local") {
-      SparkContext.getOrCreate().hadoopConfiguration
+    if (filePath == "") return (null, -1)
+    val conf = if (hdfsPath == "local") {
+      new Configuration()
     } else {
-      val _conf = SparkContext.getOrCreate().hadoopConfiguration
+      val _conf = new Configuration()
       _conf.set("fs.defaultFS", hdfsPath)
       _conf
     }
@@ -65,15 +70,15 @@ class Parser(val filePath : String = "",
     return (inputStream, fileSize)
   }
 
-  def repositionReader(newPos : Long): Unit = {
+  def repositionReader(newPos: Long): Unit = {
     pos = newPos
     reader = getBufferedReader(pos)
   }
 
   def getBufferedReader(
-      startPos: Long
-  ): BufferedReader = {
-    if(inputStream == null) return (null)
+                         startPos: Long
+                       ): BufferedReader = {
+    if (inputStream == null) return (null)
     // TODO: add support for compressed files
     inputStream.seek(startPos)
     val decoder = Charset.forName(encoding).newDecoder()
@@ -83,10 +88,18 @@ class Parser(val filePath : String = "",
   }
 
   def charSize(i: Int): Int = {
-    if (i < 128) return { 1 }
-    else if (i < 2048) return { 2 }
-    else if (i < 65534) return { 3 }
-    else { return 4 }
+    if (i < 128) return {
+      1
+    }
+    else if (i < 2048) return {
+      2
+    }
+    else if (i < 65534) return {
+      3
+    }
+    else {
+      return 4
+    }
   }
 
   def stringSize(s: String): Int = {
@@ -99,19 +112,19 @@ class Parser(val filePath : String = "",
 
   def initSyntaxStack(
                        initialState: List[Char]
-  ) : Unit = {
+                     ): Unit = {
     // TODO: should be initialized using provided initial path instead
     //       may cause issues for query with multiple descendent types
     val syntaxStackArray: ArrayBuffer[Char] = ArrayBuffer[Char]()
-      for (i <- initialState.indices) {
-        syntaxStackArray.append(initialState(i))
-      }
+    for (i <- initialState.indices) {
+      syntaxStackArray.append(initialState(i))
+    }
     this.syntaxStackArray = syntaxStackArray
-    stackPos = syntaxStackArray.size-1
+    stackPos = syntaxStackArray.size - 1
     maxStackPos = stackPos
   }
 
-  def appendToStack(stack : ArrayBuffer[Char], value : Char): Unit = {
+  def appendToStack(stack: ArrayBuffer[Char], value: Char): Unit = {
     stackPos = stackPos + 1
     if (stackPos <= maxStackPos) {
       stack(stackPos) = value
@@ -121,7 +134,7 @@ class Parser(val filePath : String = "",
     }
   }
 
-  def appendToStack(stack : ArrayBuffer[Char], value : Char, stackPos : Int, maxStackPos : Int): (Int, Int) = {
+  def appendToStack(stack: ArrayBuffer[Char], value: Char, stackPos: Int, maxStackPos: Int): (Int, Int) = {
     // appending is done like this
     // mainly to avoid having to access the last element (linear time)
     // and also to avoid memory re-allocation if possible
@@ -191,9 +204,10 @@ class Parser(val filePath : String = "",
     }
     return ("", -1)
   }
+
   def skipLevels(
-      levels: Int,
-  ): (Int) = {
+                  levels: Int,
+                ): (Int) = {
     var index: Int = 0
     var i: Int = 0
     var c: Char = '0'
@@ -205,7 +219,7 @@ class Parser(val filePath : String = "",
       if (c == '{' || c == '[' || c == '"') {
         val prevPos = pos
         skip(c)
-        index += (pos-prevPos).toInt
+        index += (pos - prevPos).toInt
       } else if (c == '}' || c == ']') {
         remainingLevels -= 1
         if (remainingLevels == 0) {
@@ -235,20 +249,20 @@ class Parser(val filePath : String = "",
                 level: Int,
                 pdaState: Int,
                 count: Int,
-                stateLevels : List[Int],
-                syntaxStack : List[Char]
-  ): HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]] = {
+                stateLevels: List[Int],
+                syntaxStack: List[Char]
+              ): HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]] = {
     var _tokens = tokens
     if (tokens contains token) {
       var isAdded = false
-      for((a,b,c,d,e) <- _tokens(token)) {
-        if(a == level && b == pdaState) {
+      for ((a, b, c, d, e) <- _tokens(token)) {
+        if (a == level && b == pdaState) {
           isAdded = true
-          _tokens = _tokens.updated(token, _tokens(token) - ((a,b,c, d, e)) + ((a,b,c+count, d, e)))
+          _tokens = _tokens.updated(token, _tokens(token) - ((a, b, c, d, e)) + ((a, b, c + count, d, e)))
         }
       }
-      if(!isAdded) {
-        _tokens = _tokens.updated(token, _tokens(token) + ((level,pdaState,count, stateLevels, syntaxStack)))
+      if (!isAdded) {
+        _tokens = _tokens.updated(token, _tokens(token) + ((level, pdaState, count, stateLevels, syntaxStack)))
       }
     } else {
       _tokens = _tokens + (token -> Set((level, pdaState, count, stateLevels, syntaxStack)))
@@ -257,24 +271,25 @@ class Parser(val filePath : String = "",
   }
 
   def mergeMapSet(
-      m1: HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]],
-      m2: HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]
-  ): HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]] = {
+                   m1: HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]],
+                   m2: HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]
+                 ): HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]] = {
     var m = m1
     for ((k, v) <- m2) {
-      for((a,b,c,d, e) <- v) {
+      for ((a, b, c, d, e) <- v) {
         m = addToken(m, k, a, b, c, d, e)
       }
     }
     m
   }
+
   def getEncounteredTokens(
-      parsedValue: Any,
-      level: Int,
-      dfaState: Int,
-      stateLevels : List[Int],
-      syntaxStack : List[Char]
-  ): HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]] = {
+                            parsedValue: Any,
+                            level: Int,
+                            dfaState: Int,
+                            stateLevels: List[Int],
+                            syntaxStack: List[Char]
+                          ): HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]] = {
     var encounteredTokens = HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]()
     parsedValue match {
       case _: HashMap[_, _] => {
@@ -283,15 +298,15 @@ class Parser(val filePath : String = "",
         ) {
           encounteredTokens =
             addToken(encounteredTokens, k, level + 1, dfaState, 1, stateLevels, syntaxStack)
-          if(v.isInstanceOf[HashMap[_, _]]) {
+          if (v.isInstanceOf[HashMap[_, _]]) {
             encounteredTokens = mergeMapSet(
-                encounteredTokens,
-                getEncounteredTokens(v, level + 1, dfaState, stateLevels, syntaxStack)
+              encounteredTokens,
+              getEncounteredTokens(v, level + 1, dfaState, stateLevels, syntaxStack)
             )
           }
           else {
             val (_, subType) = v
-            if(subType != null) { // its array type (get keys in its subType)
+            if (subType != null) { // its array type (get keys in its subType)
               encounteredTokens = mergeMapSet(
                 encounteredTokens,
                 getEncounteredTokens(subType, level + 2, dfaState, stateLevels, syntaxStack)
@@ -315,17 +330,25 @@ class Parser(val filePath : String = "",
 
   }
 
-  def finalizeValue(value : Any, partitionId:Long, rowMap: HashMap[String, (Int, DataType, Any)]): InternalRow = {
-    val (partitionIdIndex, _, _) = if(rowMap contains "partition_id") {rowMap("partition_id")} else {(-1, null, null)}
-    val (rowIndex, _, _) = if(rowMap contains "partition_row_index") {rowMap("partition_row_index")} else {(-1, null, null)}
+  def finalizeValue(value: Any, partitionId: Long, rowMap: HashMap[String, (Int, DataType, Any)]): InternalRow = {
+    val (partitionIdIndex, _, _) = if (rowMap contains "partition_id") {
+      rowMap("partition_id")
+    } else {
+      (-1, null, null)
+    }
+    val (rowIndex, _, _) = if (rowMap contains "partition_row_index") {
+      rowMap("partition_row_index")
+    } else {
+      (-1, null, null)
+    }
 
     value match {
       case arr: Array[Any] =>
-        if(partitionIdIndex > -1) {
+        if (partitionIdIndex > -1) {
           arr(partitionIdIndex) = partitionId
           arr(rowIndex) = count
         }
-        InternalRow.fromSeq(arr.toSeq)
+        new GenericInternalRow(arr)
       case _ =>
         if (partitionIdIndex > -1) {
           InternalRow.fromSeq(Seq(value, partitionId, count))
@@ -334,26 +357,28 @@ class Parser(val filePath : String = "",
         }
     }
   }
+
   def getNextMatch(
-                    projection : ProjectionNode,
+                    projection: ProjectionNode,
                     getTokens: Boolean = false,
                     getTypes: Boolean = false,
-                    keepExtras : Boolean = false,
-                    partitionId : Long = 0L,
-  ): (Boolean, Any, HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]) = {
+                    keepExtras: Boolean = false,
+                    partitionId: Long = 0L,
+                    getTokensOnly: Boolean = false,
+                  ): (Boolean, Any, HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]) = {
     var encounteredTokens = HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]()
     while (true) {
-      if(parsedRecords.nonEmpty) {
-        val record =  parsedRecords.dequeue()
-//        parsedRecords.remove(0)
-        if(getTypes) {
+      if (parsedRecords.nonEmpty) {
+        val record = parsedRecords.dequeue()
+        //        parsedRecords.remove(0)
+        if (getTypes) {
           return (true, record, encounteredTokens)
         } else {
-          count+=1
+          count += 1
           return (true, finalizeValue(record, partitionId, projection.rowMap), encounteredTokens)
         }
       }
-      if (pos+1 >= end) {
+      if (pos + 1 >= end) {
         return (false, null, encounteredTokens)
       }
 
@@ -368,39 +393,43 @@ class Parser(val filePath : String = "",
         if (getTypes) {
           val prevPos = pos
           val value = parseType(c, projection)
-          val tokensValue =  if(getTokens && (!projection.acceptAll || value.isEmpty)) {
+          val tokensValue = if (getTokens && (!projection.acceptAll || value.isEmpty)) {
             repositionReader(prevPos)
-            parseType(c, new ProjectionNode(acceptAll=true))
-          } else {  value }
-          if(getTokens && tokensValue.nonEmpty) {
+            parseType(c, new ProjectionNode(acceptAll = true))
+          } else {
+            value
+          }
+          if (getTokens && tokensValue.nonEmpty) {
             encounteredTokens = mergeMapSet(
               encounteredTokens,
               getEncounteredTokens(
                 tokensValue.get,
-                stackPos+1,
+                stackPos + 1,
                 pda.currentState,
                 pda.getStateLevels,
-                syntaxStackArray.take(stackPos+1).toList
+                syntaxStackArray.take(stackPos + 1).toList
               )
             )
+            if(getTokensOnly && parsedRecords.isEmpty) {
+              return (true, null, encounteredTokens)
+            }
           }
         } else {
-          val value = _parse(
+          parse(
+            projection,
             "",
-            projection.rowMap,
-            projection.filterVariables,
             c
           )
         }
       } else if (c != ',' && c != ']' && (c == '[' || pda.states(pda.currentState).stateType.equals("array"))) {
-        if(c != '[') { // happens only if user provided a query that doesn't match the data
+        if (c != '[') { // happens only if user provided a query that doesn't match the data
           println("Query expects array but found other type. Skipping this item.")
           println("Found character: " + c)
           println(pda)
           skip(c)
           pda.toPrevState(stackPos)
-        } else if (!pda.toNextStateIfArray(stackPos+1) &&
-            !pda.states(pda.currentState).stateType.equals("descendant")) {
+        } else if (!pda.toNextStateIfArray(stackPos + 1) &&
+          !pda.states(pda.currentState).stateType.equals("descendant")) {
           skip(c)
         } else {
           appendToStack(syntaxStackArray, c)
@@ -408,11 +437,11 @@ class Parser(val filePath : String = "",
 
       } else if (c == '{') {
         appendToStack(syntaxStackArray, c)
-        if(pda.currentState == 0 && pda.states(0).value == "$") {
+        if (pda.currentState == 0 && pda.states(0).value == "$") {
           pda.toNextState()
         }
       } else if ((c == '}' || c == ']')) {
-        if(stackPos < 0 || (c == '}' && syntaxStackArray(stackPos) != '{') || (c == ']' && syntaxStackArray(stackPos) != '[')) {
+        if (stackPos < 0 || (c == '}' && syntaxStackArray(stackPos) != '{') || (c == ']' && syntaxStackArray(stackPos) != '[')) {
           // NOTE THIS EXCEPTION WAS NEVER RAISED IN ALL EXPERIMENTS AND TESTS (with valid JSON input)
           new Exception(
             """Encountered mismatched character to content of stack! Possible invalid initialization or invalid input syntax.
@@ -441,62 +470,60 @@ class Parser(val filePath : String = "",
           token = token.substring(1, token.size - 1)
           if (getTokens) {
             encounteredTokens = addToken(
-                encounteredTokens,
-                token,
-                stackPos+1,
-                pda.currentState,
+              encounteredTokens,
+              token,
+              stackPos + 1,
+              pda.currentState,
               1,
               pda.getStateLevels,
-                syntaxStackArray.take(stackPos+1).toList
-              )
+              syntaxStackArray.take(stackPos + 1).toList
+            )
           }
-          if(token.equals("shippingLevelsOfService") || token.equals("products")) {
-            Unit
-          }
-          val pdaResponse = pda.checkToken(token, stackPos+1)
+          val pdaResponse = pda.checkToken(token, stackPos + 1)
 
           if (pdaResponse.equals("accept")) {
             if (getTypes) {
               val prevPos = pos
-              val value = parseType(projection=projection)
-              val tokensValue =  if(getTokens && (!projection.acceptAll || value.isEmpty)) {
+              val value = parseType(projection = projection)
+              val tokensValue = if (getTokens && (!projection.acceptAll || value.isEmpty)) {
                 repositionReader(prevPos)
-                parseType(projection=new ProjectionNode(acceptAll=true))
-              } else {  value }
-              if(getTokens && tokensValue.nonEmpty) {
+                parseType(projection = new ProjectionNode(acceptAll = true))
+              } else {
+                value
+              }
+              if (getTokens && tokensValue.nonEmpty) {
                 encounteredTokens = mergeMapSet(
                   encounteredTokens,
                   getEncounteredTokens(
                     tokensValue.get,
-                    stackPos+1,
+                    stackPos + 1,
                     pda.currentState,
                     pda.getStateLevels,
-                    syntaxStackArray.take(stackPos+1).toList
+                    syntaxStackArray.take(stackPos + 1).toList
                   )
                 )
               }
 
             } else {
-              val value = _parse(
-                token,
-                projection.rowMap,
-                projection.filterVariables
+              parse(
+                projection,
+                token
               )
             }
           } else if (pdaResponse.equals("reject")) {
 
             if (getTokens) {
-              val _parsedValue = parseType(projection=new ProjectionNode(acceptAll = true))
+              val _parsedValue = parseType(projection = new ProjectionNode(acceptAll = true))
               parsedRecords.clear()
               _parsedValue match {
                 case Some(v) => encounteredTokens = mergeMapSet(
                   encounteredTokens,
                   getEncounteredTokens(
                     v,
-                    stackPos+1,
+                    stackPos + 1,
                     pda.currentState,
                     pda.getStateLevels,
-                    syntaxStackArray.take(stackPos+1).toList
+                    syntaxStackArray.take(stackPos + 1).toList
                   )
                 )
                 case None => {}
@@ -507,7 +534,10 @@ class Parser(val filePath : String = "",
             }
 
           }
-        } else if(t == ']' || t == '}') {
+          if(getTokensOnly && parsedRecords.isEmpty) {
+            return (true, null, encounteredTokens)
+          }
+        } else if (t == ']' || t == '}') {
           stackPos -= 1
         }
       }
@@ -516,8 +546,8 @@ class Parser(val filePath : String = "",
   }
 
   def consume(
-      currentChar: Char = '\u0000'
-  ): String = {
+               currentChar: Char = '\u0000'
+             ): String = {
     val output = new StringBuilder()
     val localStack = scala.collection.mutable.ArrayBuffer[Char]()
     var stackPos = -1
@@ -538,30 +568,30 @@ class Parser(val filePath : String = "",
       c = currentChar;
     }
     while (true) {
-      if (stackPos+1 == 0 && (c == ',' || c == ']' || c == '}')) {
+      if (stackPos + 1 == 0 && (c == ',' || c == ']' || c == '}')) {
         reader.reset()
         pos -= charSize(c.toInt)
         return output.toString()
       } else if (
         !isString &&
-        (c == '{' || c == '[' ||
-          (!isEscaped && c == '"'))
+          (c == '{' || c == '[' ||
+            (!isEscaped && c == '"'))
       ) {
         output.append(c)
-        val (_stackPos, _maxStackPos) : (Int, Int) = appendToStack(localStack, c, stackPos, maxStackPos)
+        val (_stackPos, _maxStackPos): (Int, Int) = appendToStack(localStack, c, stackPos, maxStackPos)
         stackPos = _stackPos
         maxStackPos = _maxStackPos
         if (c == '"')
           isString = true
       } else if (
         (!isString && (c == '}' || c == ']')) ||
-        (isString && !isEscaped && c == '"')
+          (isString && !isEscaped && c == '"')
       ) {
         output.append(c)
-        stackPos-=1
+        stackPos -= 1
         if (c == '"')
           isString = false;
-        if (stackPos+1 == 0) {
+        if (stackPos + 1 == 0) {
           return output.toString()
         }
       } else {
@@ -583,7 +613,7 @@ class Parser(val filePath : String = "",
         countEscape = 0
       }
       prevC = c
-      if (pos >= end && stackPos+1 == 0) {
+      if (pos >= end && stackPos + 1 == 0) {
         return output.toString()
       }
       reader.mark(1);
@@ -600,8 +630,8 @@ class Parser(val filePath : String = "",
 
   // like consume but doesn't store the value
   def skip(
-      currentChar: Char = '\u0000'
-  ): Unit = {
+            currentChar: Char = '\u0000'
+          ): Unit = {
     val localStack = scala.collection.mutable.ArrayBuffer[Char]()
     var stackPos = -1
     var maxStackPos = -1
@@ -621,30 +651,30 @@ class Parser(val filePath : String = "",
       c = currentChar;
     }
     while (true) {
-      if (stackPos+1 == 0 && (c == ',' || c == ']' || c == '}')) {
+      if (stackPos + 1 == 0 && (c == ',' || c == ']' || c == '}')) {
         reader.reset()
         pos -= charSize(c.toChar)
         return;
       } else if (
         !isString &&
-        (c == '{' || c == '[' ||
-          (!isEscaped && c == '"'))
+          (c == '{' || c == '[' ||
+            (!isEscaped && c == '"'))
       ) {
         // localStack.append(c)
-        val (_stackPos, _maxStackPos) : (Int, Int) = appendToStack(localStack, c, stackPos, maxStackPos)
+        val (_stackPos, _maxStackPos): (Int, Int) = appendToStack(localStack, c, stackPos, maxStackPos)
         stackPos = _stackPos
         maxStackPos = _maxStackPos
         if (c == '"')
           isString = true
       } else if (
         (!isString && (c == '}' || c == ']')) ||
-        (isString && !isEscaped && c == '"')
+          (isString && !isEscaped && c == '"')
       ) {
         // localStack.trimEnd(1)
         stackPos -= 1
         if (c == '"')
           isString = false;
-        if (stackPos+1 == 0) {
+        if (stackPos + 1 == 0) {
           return
         }
       } else {
@@ -665,7 +695,7 @@ class Parser(val filePath : String = "",
         countEscape = 0
       }
       prevC = c
-      if (pos >= end && stackPos+1 == 0) {
+      if (pos >= end && stackPos + 1 == 0) {
         return
       }
       reader.mark(1);
@@ -686,12 +716,12 @@ class Parser(val filePath : String = "",
     """[0-9\-NI]""".r // a number must start with a digit, -, or N for NaN or I for Infinity
 
   def _parse(
-      key: String,
-      rowMap: HashMap[String, (Int, DataType, Any)],
-      filterVariables: HashMap[String, Variable] =
-        new HashMap[String, Variable],
-      currentChar: Char = '\u0000'
-  ): Option[Any] = {
+              key: String,
+              rowMap: HashMap[String, (Int, DataType, Any)],
+              filterVariables: HashMap[String, Variable] =
+              new HashMap[String, Variable],
+              currentChar: Char = '\u0000'
+            ): Option[Any] = {
     var c = '"'
     if (currentChar == '\u0000' || currentChar == ',') {
       val i = reader.read()
@@ -706,20 +736,22 @@ class Parser(val filePath : String = "",
 
     val (_, dataType, subType): (_, DataType, Any) = if (rowMap.contains(key)) {
       rowMap(key)
-    } else { (-1, NullType, null) }
+    } else {
+      (-1, NullType, null)
+    }
 
     while (true) {
       c match {
-        case '{' =>  return _parseObject(
-              "",
-              rowMap,
-              filterVariables
-            )
+        case '{' => return _parseObject(
+          "",
+          rowMap,
+          filterVariables
+        )
         case '[' => return _parseArray(
-            "",
-            subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]],
-            dataType
-          )
+          "",
+          subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]],
+          dataType
+        )
         case '"' => {
           val str = consume(c)
           if (dataType.isInstanceOf[StringType]) {
@@ -736,7 +768,7 @@ class Parser(val filePath : String = "",
         case 'f' => {
           reader.skip(4)
           pos += stringSize("alse")
-          return  Some(false)
+          return Some(false)
         }
         case 't' => {
           reader.skip(3)
@@ -747,7 +779,7 @@ class Parser(val filePath : String = "",
           val str = _getNum(c)
           if (dataType.isInstanceOf[DoubleType]) {
             return Some(str.toDouble)
-          } else if (dataType.isInstanceOf[LongType]){
+          } else if (dataType.isInstanceOf[LongType]) {
             return Some(str.toLong)
           } else if (dataType.isInstanceOf[StringType]) {
             // may happen if schema inferred to null and we replaced nulls
@@ -771,15 +803,19 @@ class Parser(val filePath : String = "",
   }
 
   def _parseObject(
-      parentKey: String,
-      rowMap: HashMap[String, (Int, DataType, Any)],
-      filterVariables: HashMap[String, Variable] =
-        new HashMap[String, Variable],
-  ): Option[Any] = {
+                    parentKey: String,
+                    rowMap: HashMap[String, (Int, DataType, Any)],
+                    filterVariables: HashMap[String, Variable] =
+                    new HashMap[String, Variable],
+                  ): Option[Any] = {
     val rowSequence = new Array[Any](rowMap.size)
-    val predicateValues = if(filterVariables != null) {new Array[Any](filterVariables.size)} else {new Array[Any](0)}
+    val predicateValues = if (filterVariables != null) {
+      new Array[Any](filterVariables.size)
+    } else {
+      new Array[Any](0)
+    }
     var rowCounter = 0
-    if(rowMap contains "partition_id") {
+    if (rowMap contains "partition_id") {
       rowCounter += 2
     }
     var isKey = true
@@ -788,10 +824,10 @@ class Parser(val filePath : String = "",
     while (true) { // parse until full object or end of file
       if (rowCounter == rowMap.size) {
         skip('{')
-        if(parentKey == "*")
+        if (parentKey == "*")
           return Some(rowSequence)
         else
-          return Some(InternalRow.fromSeq(rowSequence.toSeq))
+          return Some(new GenericInternalRow(rowSequence))
       }
       val i = reader.read()
       if (i == -1) {
@@ -802,12 +838,14 @@ class Parser(val filePath : String = "",
 
       val (index, dataType, subType): (Int, DataType, Any) = if (!isKey) {
         rowMap(key)
-      } else { (-1, NullType, null) }
+      } else {
+        (-1, NullType, null)
+      }
       //  println((parentKey, key, index, dataType))
       c match {
         case '{' => {
 
-          if(dataType.isInstanceOf[StringType]) {
+          if (dataType.isInstanceOf[StringType]) {
             val obj =
               consume(c)
             rowSequence(index) = UTF8String.fromString(obj)
@@ -826,7 +864,7 @@ class Parser(val filePath : String = "",
           isKey = true
         }
         case '[' => {
-          if(dataType.isInstanceOf[StringType]) {
+          if (dataType.isInstanceOf[StringType]) {
             val str =
               consume(c)
             rowSequence(index) = UTF8String.fromString(str.trim)
@@ -839,7 +877,8 @@ class Parser(val filePath : String = "",
             // map = map + ((key, arr))
             arr match {
               case Some(a) => rowSequence(index) = arr
-              case None => {}}
+              case None => {}
+            }
 
           }
           rowCounter += 1
@@ -867,7 +906,7 @@ class Parser(val filePath : String = "",
           val str = _getNum(c)
           if (dataType.isInstanceOf[DoubleType]) {
             rowSequence(index) = str.toDouble
-          } else if (dataType.isInstanceOf[LongType]){
+          } else if (dataType.isInstanceOf[LongType]) {
             rowSequence(index) = str.toLong
           } else if (dataType.isInstanceOf[StringType]) {
             // may happen if schema inferred to null and we replaced nulls
@@ -914,10 +953,10 @@ class Parser(val filePath : String = "",
           reader.skip(3)
         }
         case '}' => {
-          if(parentKey == "")
+          if (parentKey == "")
             return Some(rowSequence)
           else
-            return Some(InternalRow.fromSeq(rowSequence.toSeq))
+            return Some(new GenericInternalRow(rowSequence))
           // return (row, pos, false)
         }
         case _ => {} // skip character
@@ -941,10 +980,10 @@ class Parser(val filePath : String = "",
   }
 
   def _parseArray(
-      parentKey: String,
-      rowMap: HashMap[String, (Int, DataType, Any)],
-      dataType: DataType
-  ): Option[ArrayData] = {
+                   parentKey: String,
+                   rowMap: HashMap[String, (Int, DataType, Any)],
+                   dataType: DataType
+                 ): Option[ArrayData] = {
     val arr = new ArrayBuffer[Any]()
 
     while (true) {
@@ -957,19 +996,19 @@ class Parser(val filePath : String = "",
 
       c match {
         case '{' => {
-          if(rowMap != null) { // if null probably speculation only encountered empty lists
+          if (rowMap != null) { // if null probably speculation only encountered empty lists
             val obj =
               _parseObject(parentKey, rowMap)
             obj match {
               case Some(obj) => arr.append(obj)
               case None => {}
             }
-            } else if (dataType.isInstanceOf[StringType]) {
-              val str = consume('{')
-              arr.append(str)
-            } else { // skip it
-              skip('{')
-            }
+          } else if (dataType.isInstanceOf[StringType]) {
+            val str = consume('{')
+            arr.append(str)
+          } else { // skip it
+            skip('{')
+          }
         }
         case '[' => {
           if (dataType.isInstanceOf[DoubleType]) {
@@ -985,7 +1024,9 @@ class Parser(val filePath : String = "",
           } else {
             val _dataType = if (dataType.isInstanceOf[ArrayType]) {
               dataType.asInstanceOf[ArrayType].elementType
-            } else { dataType }
+            } else {
+              dataType
+            }
             val _arr =
               _parseArray(
                 parentKey,
@@ -996,25 +1037,27 @@ class Parser(val filePath : String = "",
           }
         }
         case '"' => {
-          val str= consume(c)
+          val str = consume(c)
           arr.append(UTF8String.fromString(str.substring(1, str.length - 1)))
         }
         case numRegExp() => {
-          val str= _getNum(c)
+          val str = _getNum(c)
           val _dataType = if (dataType.isInstanceOf[ArrayType]) {
-              dataType.asInstanceOf[ArrayType].elementType
-            } else { dataType }
+            dataType.asInstanceOf[ArrayType].elementType
+          } else {
+            dataType
+          }
           if (_dataType.isInstanceOf[DoubleType]) {
             arr.append(str.toDouble)
-          } else if (dataType.isInstanceOf[LongType]){
+          } else if (dataType.isInstanceOf[LongType]) {
             arr.append(str.toLong)
           } else if (dataType.isInstanceOf[StringType]) {
             // may happen if schema inferred to null and we replaced nulls
             // with strings (in case of speculation)
             arr.append(UTF8String.fromString(str))
           }
-          // val (num, newPos) = _parseDouble(reader, encoding, pos, end, c)
-          // arr.append(num)
+          //           val (num, newPos) = _parseDouble(reader, encoding, pos, end, c)
+          //           arr.append(num)
         }
         case 'n' => {
           arr.append(null)
@@ -1043,13 +1086,13 @@ class Parser(val filePath : String = "",
   }
 
   def _getNum(
-      currentChar: Char = '\u0000'
-  ): String = {
+               currentChar: Char = '\u0000'
+             ): String = {
     var str = new StringBuilder()
 
     var c = currentChar
     while (true) {
-      if(isWhiteSpace(c)) {
+      if (isWhiteSpace(c)) {
         return str.toString()
       }
       else if (c == ']' || c == '}' || c == ',') {
@@ -1077,186 +1120,298 @@ class Parser(val filePath : String = "",
   }
 
 
-
-  /*********************************************
-   ROW PARSER FUNCTIONS
-   *********************************************/
+  /** *******************************************
+   * ROW PARSER FUNCTIONS
+   * ******************************************* */
 
   def parse(
-                 currentChar: Char = '\u0000',
-                 projection: ProjectionNode
-               ): Option[Any] = {
+             projection: ProjectionNode,
+             key: String = "",
+             currentChar: Char = '\u0000'
+           ): Unit = {
     var c = '"'
     if (currentChar == '\u0000' || currentChar == ',') {
       val i = reader.read()
       if (i == -1) {
-        return None
+        return
       }
       c = i.toChar
       pos += charSize(i)
     } else {
       c = currentChar;
     }
-//    if(!projection.hasFilter && projection.outputsRowMap.)
+    if (projection.isOutputNode && !projection.hasFilter && projection.outputsRowMap.isEmpty) {
+      skip(c)
+      parsedRecords.enqueue(InternalRow.empty)
+    }
+    val (_, dataType, subType): (_, DataType, Any) = if (projection.outputsRowMap.contains(key)) {
+      projection.outputsRowMap(key)
+    } else {
+      (-1, NullType, null)
+    }
     while (true) {
       c match {
         case '{' => {
-          val objType =
-            parseObjectType("*", projection)
-          // if(!(objType contains("GO")))
-          // println(c, objType)
-          return objType
+          parseObject("*", projection)
+          return
         }
         case '[' => {
-          val arrType =
-            parseArrayType("*", projection)
-          return arrType
+          parseArray(key, projection)
+          return
         }
-        case '"' => {
-          val prevPos = pos
-          skip(c)
-          val t = if(pos-prevPos <= 1) {  (NullType, null) } else { (StringType, null) } // empty strings are treated as NullType (this solves an issue in one dataset, where they provide an empty string for missing values
-          parsedRecords.enqueue(t)
-          return Some(t)
-        }
-        case 'n' => {
-          reader.skip(3)
-          pos += stringSize("ull")
-          parsedRecords.enqueue((NullType, null))
-          return Some((NullType, null))
-        }
-        case 'f' => {
-          reader.skip(4)
-          pos += stringSize("alse")
-          parsedRecords.enqueue((BooleanType, null))
-          return Some((BooleanType, null))
-        }
-        case 't' => {
-          reader.skip(3)
-          pos += stringSize("rue")
-          parsedRecords.enqueue((BooleanType, null))
-          return Some((BooleanType, null))
-        }
-        case numRegExp() => {
-          val str= consume(c)
-          if(!(str matches "\\d+")) {
-            parsedRecords.enqueue((DoubleType, null))
-            return Some((DoubleType, null))
+        case _ => {
+          c match {
+            case '"' => {
+              val str = consume(c)
+              if (dataType.isInstanceOf[StringType]) {
+                parsedRecords.enqueue(UTF8String.fromString(str.substring(1, str.length - 1)))
+              } else { // can also other regular expression checks here for special string types
+                parsedRecords.enqueue(null)
+              }
+              return
+            }
+            case 'n' => {
+              skip()
+              parsedRecords.enqueue(null)
+              // may raise exception here if str != null (but assume value is correct here for now)
+              return
+            }
+            case 'f' => {
+              skip()
+              parsedRecords.enqueue(false)
+              return
+            }
+            case 't' => {
+              skip()
+              parsedRecords.enqueue(true)
+              return
+            }
+            case numRegExp() => {
+              val str = consume(c)
+              // can add try/catch to ignore malformed numbers
+              dataType match {
+                case _: DoubleType =>
+                  parsedRecords.enqueue(str.toDouble)
+                  return
+                case _: LongType =>
+                  parsedRecords.enqueue(str.toLong)
+                  return
+                case _: StringType =>
+                  // may happen if schema inferred to null and we replaced nulls
+                  // or if schema inference encountered incompatible types (e.g. some fields are strings, and others double
+                  // with strings (in case of speculation)
+                  parsedRecords.enqueue(UTF8String.fromString(str))
+                  return
+                case _ =>
+                  parsedRecords.enqueue(null)
+                  return
+              }
+            }
+            case _ => {} // these are skipped (e.g. whitespace)
           }
-          else {
-            parsedRecords.enqueue((LongType, null))
-            return Some((LongType, null))
-          }
-          // val newPos = skip(reader, encoding, pos, end, c)
         }
-        case _ => {} // these are skipped (e.g. whitespace)
+
       }
 
       val i = reader.read()
       if (i == -1) {
-        return None
+        return
       }
       c = i.toChar
       pos += charSize(i)
     }
-    return None
+  }
+
+  def groupMap(m1:Map[String, Array[Any]], m2:Map[String, Any]):Map[String, Array[Any]] = {
+    val set = (m1.keySet ++ m2.keySet).map { i => i -> (m1.get(i) ++ Array[Any](m2.get(i))).toArray }
+    set.toMap
   }
 
   def parseObject(
-                       parentKey: String,
-                       projection: ProjectionNode,
-                     ): Option[HashMap[String, Any]]= {
+                   parentKey: String,
+                   projection: ProjectionNode,
+                 ): Option[Any] = {
     var map = HashMap[String, Any]()
     var isKey = true
     var key = ""
     var inFilter = false
     var inChildren = false
     var inDescendants = false
+    var inOutputs = false
     var keyIndex = -1
-    var keyProjection : ProjectionNode = new ProjectionNode()
-    val rowSequence = new Array[Any](projection.rowMap.size)
+    var outputIndex = -1
+    var keyRowMap : HashMap[String, (Int, DataType, Any)] = null
+    var keySubType : DataType = null
+    var keyProjection: ProjectionNode = new ProjectionNode()
+    val filterSequence = new Array[Any](projection.rowMap.size) // for values used in filters
+    val outputSequence = new Array[Any](projection.outputsRowMap.size) // for values used in output row
+    var rowCounter = 0
+    if (projection.outputsRowMap contains "partition_id") {
+      rowCounter += 2
+    }
     val predicateValues = new Array[Any](projection.nPredicates)
-    while (true) { // parse until full object or end of file
+    while (true) {
+      if ((projection.acceptAll || projection.isOutputNode) && rowCounter == projection.outputsRowMap.size && projection.notDescending && (!projection.hasFilter || filterSequence(0) == true)) {
+        skip('{')
+        if (projection.isOutputNode) {
+          parsedRecords.enqueue(outputSequence)
+        }
+        return Some(map)
+      }
       val i = reader.read()
       if (i == -1) {
         return None
       }
       val c = i.toChar
       pos += charSize(i)
-
       var propagateFilter = false
       c match {
         case '{' => {
+          if(keySubType.isInstanceOf[StringType]) {
+            val str = consume(c)
+            if (projection.isOutputNode) {
+              outputSequence(outputIndex) = UTF8String.fromString(str)
+            }
+            if(inFilter) {
+              filterSequence(keyIndex) = str
+            }
+          } else {
+            val objMap =
+              parseObject(key, keyProjection)
+            objMap match {
+              case Some(o)  => {
+                val subMap = objMap.get.asInstanceOf[HashMap[String, Any]]
+                val nestedOutputSequence = new Array[Any](keyProjection.outputsRowMap.size)
+                for ((k, v) <- subMap) {
+                  if (projection.descendantsTree.contains(k) && projection.descendantsTree(k).parentKey.equals(parentKey) && projection.outputsRowMap.contains(k)) {
+                    val index = projection.outputsRowMap(k)._1
+                    val dataType: DataType = projection.outputsRowMap(k)._2
+                    if (projection.isOutputNode) {
+                      if (dataType.isInstanceOf[StringType]) {
+                        outputSequence(index) = UTF8String.fromString(v.toString)
+                      } else if (dataType.isInstanceOf[StringType]){
+                        if(outputSequence(index) != null) {
+                          val l = v.asInstanceOf[Array[Any]]
+                          outputSequence(index) = ArrayData.toArrayData(outputSequence(index).asInstanceOf[ArrayData].array ++ l)
+                        } else {
+                          outputSequence(index) = ArrayData.toArrayData(v)
+                        }
+                      } else {
+                        outputSequence(index) = v
+                      }
+                    }
+                    map = map + ((k, v))
+                  } else if (keyProjection.notDescending && projection.outputsRowMap.contains(key) && keyProjection.outputsRowMap.contains(k)) {
+                    val index = keyProjection.outputsRowMap(k)._1
+                    val dataType = keyProjection.outputsRowMap(k)._2
+                    if (dataType.isInstanceOf[StringType]) {
+                      nestedOutputSequence(index) = UTF8String.fromString(v.toString)
+                    } else if(dataType.isInstanceOf[ArrayType]) {
+                      val l = v.asInstanceOf[Array[Any]]
+                      nestedOutputSequence(index) = ArrayData.toArrayData(l)
+                    } else {
+                      nestedOutputSequence(index) = v
+                    }
+                  } else {
+                    map = map + ((k, v))
+                  }
+                }
 
-          val objType =
-            parseObjectType(key, keyProjection)
-          objType match {
-            case Some(o) => {
-              var newSubMap = new HashMap[String, Any]()
-              for((k,v) <- o) {
-                if(projection.descendantsTree.contains(k) && projection.descendantsTree(k).parentKey.equals(parentKey)){
-                  //                  map = map + ((".." + k,v))
-                  map = map + ((k,v))
-                } else if((keyProjection.notDescending && keyProjection.acceptAll) || keyProjection.childrenTree.contains(k)) {
-                  newSubMap = newSubMap + ((k, v))
-                } else {
-                  map = map + ((k,v))
+                if (projection.isOutputNode) {
+                  outputSequence(outputIndex) = new GenericInternalRow(nestedOutputSequence)
+                  rowCounter += 1
+                }
+                map = map + ((key, new GenericInternalRow(nestedOutputSequence)))
+                if(inFilter) {
+                  filterSequence(keyIndex) = "" // only to check if value is not null
                 }
               }
-              map = map + ((key, newSubMap))
+              case None => {}
             }
-            case None => {}
           }
-          if(inFilter) {
+          if (inFilter) {
             // TODO fix it (may require passing the inputStream to reset the position
             // Only filter for Geometry is supported for this type
             // has to be a nested filter otherwise
-            // ignore it for now
+            // ignored for now
+
             propagateFilter = true
           }
           isKey = true
         }
         case '[' => {
-          if (
-            (parentKey.equals("geometry") && (key.equals("coordinates")
-              || parentKey.equals("geometries")))
-          ) {
-            skip(c)
-            // encoded as string because a geometry can have a different dimension
-            // based on type, e.g. points are 1d, polygons are 3d, etc.
-            if(projection.acceptAll || inChildren || inDescendants) {
-              map = map + ((key, (StringType, null)))
+          if (keySubType.isInstanceOf[StringType]) {
+            val str = consume(c)
+            if(projection.isOutputNode) {
+              outputSequence(outputIndex) = UTF8String.fromString(str)
             }
+            map = map + ((key, str))
           } else {
-            val arrType =
-              parseArrayType(key, keyProjection)
-            arrType match {
-              case Some(at) => {
-                if(!inChildren && !inDescendants && !projection.acceptAll) {
-                  val subType = at._2.asInstanceOf[HashMap[String, Any]]
-                  for((k,v) <- subType) {
-                    //                      for((_k,v) <- subType) {
-                    //                      val k  = if(projection.descendantsTree(_k).parentKey.equals(parentKey)) { ".." + _k } else {_k}
-                    map = map + ((k, (ArrayType(NullType), v)))
+              val arr = parseArray(key, keyProjection)
+              arr match {
+                case Some(at) => {
+                  var groupedMap = new HashMap[String, Any]()
+                  if(!inOutputs) {
+                    // merge maps
+                    val l = at.asInstanceOf[ArrayBuffer[Any]]
+                    // iterate to get rid of nested arrays
+//                    groupedMap = new HashMap[String, Any]()
+                    for(i <- l.indices) {
+                      val m = l(i).asInstanceOf[HashMap[String, Any]]
+                      for((k,v) <- m) {
+                        if(!groupedMap.contains(k)) {
+                          groupedMap = groupedMap + ((k, new ArrayBuffer[Any]()))
+                        }
+                        groupedMap(k).asInstanceOf[ArrayBuffer[Any]].append(v)
+                      }
+                    }
                   }
-                } else {
-                  map = map + ((key, at))
+
+                  if(projection.isOutputNode) {
+                    if(!inOutputs) { // must be descending
+                      for((k,v) <- groupedMap) {
+                        if(projection.outputsRowMap.contains(k)) {
+                          outputIndex = projection.outputsRowMap(k)._1
+                          val dd = v.asInstanceOf[ArrayBuffer[Any]].toArray
+                          if(outputSequence(outputIndex) != null) {
+                            outputSequence(outputIndex) = ArrayData.toArrayData(outputSequence(outputIndex).asInstanceOf[ArrayData].array ++ dd)
+                          } else {
+                            outputSequence(outputIndex) = ArrayData.toArrayData(dd)
+                          }
+                          rowCounter += 1
+                        }
+                      }
+                    } else {
+                      outputSequence(outputIndex) = at
+                      rowCounter += 1
+                    }
+                  }
+                  if(keyProjection.notDescending) {
+                    map = map + ((key, at))
+                  } else {
+                    for((k,v) <- groupedMap) {
+                      val dd = v.asInstanceOf[ArrayBuffer[Any]].toArray
+                      if(map contains k) {
+                        map = map + ((k, map(k).asInstanceOf[Array[Any]] ++ dd))
+                      } else {
+                        map = map + ((k,dd))
+                      }
+                    }
+                  }
                 }
+                case None => {}
               }
-              case None => {}
-            }
-
-            if(inFilter) {
-              // TODO fix it (may require passing the inputStream to reset the position
-              // Only filter for arrays with basic types is supported
-              // has to be a nested filter otherwise
-              // ignore it for now
-              if(arrType.nonEmpty)
-                rowSequence(keyIndex) = arrType.get
-              propagateFilter = true
-            }
-
           }
+
+              if (inFilter) {
+//                 TODO fix it (may require passing the inputStream to reset the position
+                // Only filter for arrays with basic types is supported
+                // has to be a nested filter otherwise
+                // ignore it for now
+                //              if (arrType.nonEmpty)
+                //                rowSequence(keyIndex) = arrType.get
+                propagateFilter = true
+              }
           isKey = true
 
         }
@@ -1268,128 +1423,215 @@ class Parser(val filePath : String = "",
             inFilter = projection.rowMap.contains(key)
             inChildren = projection.childrenTree.contains(key)
             inDescendants = projection.descendantsTree.contains(key)
-            if(!projection.acceptAll && !projection.hasDescendants && !inChildren && !inFilter) {
+            inOutputs = projection.outputsRowMap.contains(key)
+            if (!projection.hasDescendants && !inOutputs && !inFilter) {
               skip()
               isKey = true
             } else {
-              if(inFilter) {
+              if (inFilter) {
                 val (_keyIndex, _, _) = projection.rowMap(key)
                 keyIndex = _keyIndex
               }
-              keyProjection = if(inChildren) {projection.childrenTree(key) } else if(inDescendants) { projection.descendantsTree(key) } else {
-                new ProjectionNode()
+              if (inOutputs) {
+                val (_outputsIndex, _keySubType, _keyRowMap) = projection.outputsRowMap(key)
+                outputIndex = _outputsIndex
+                keySubType = _keySubType
+                keyRowMap = _keyRowMap.asInstanceOf[HashMap[String, (Int, DataType, Any)]]
+              } else if(inDescendants && projection.descendantsTree(key).isOutputNode && projection.descendantsTree(key).outputsRowMap.contains(key)) {
+                val (_outputsIndex, _keySubType, _keyRowMap) = projection.descendantsTree(key).outputsRowMap(key)
+                outputIndex = _outputsIndex
+                keySubType = _keySubType
+                keyRowMap = _keyRowMap.asInstanceOf[HashMap[String, (Int, DataType, Any)]]
+                inOutputs = true
+              }
+              keyProjection = if (inChildren) {
+                projection.childrenTree(key)
+              } else if (inDescendants) {
+                projection.descendantsTree(key)
+              } else if (inOutputs) {
+                val p = new ProjectionNode(acceptAll = true)
+                p.outputsRowMap = keyRowMap
+                p
+              } else { // for descending values
+                val p = new ProjectionNode()
+                p.outputsRowMap = projection.outputsRowMap
+                p
               }
               keyProjection.acceptAll = projection.acceptAll || keyProjection.acceptAll
               keyProjection.descendantsTree = keyProjection.descendantsTree ++ projection.descendantsTree
-              if(projection.hasDescendants && !inChildren && !inDescendants) {
+              if (projection.hasDescendants && !inChildren && !inDescendants && !inOutputs) {
                 keyProjection.notDescending = false
               }
-
             }
           } else {
-
-            val prevPos = pos
-            val str = if(inFilter) {
-              consume(c)
-            } else { skip(c); ""}
-            if(inFilter) {
-              rowSequence(keyIndex) = str
+            if (!inFilter && !inOutputs) {
+              skip(c)
+            } else {
+            val _str: String = consume(c)
+            val str = _str.substring(1, _str.length - 1)
+            if (inFilter) {
+              filterSequence(keyIndex) = str
               propagateFilter = true
             }
-            if(projection.acceptAll || inChildren || inDescendants) {
-              if(pos-prevPos <= 1) {
-                map = map + ((key, (NullType, null)))
-              } else {
-                map = map + ((key, (StringType, null)))
+              val _keySubType = keySubType match {
+                case arrayType: ArrayType =>
+                  arrayType.elementType
+                case _ => keySubType
               }
+            if (_keySubType.isInstanceOf[StringType]) {
+              map = map + ((key, str))
+              if (projection.isOutputNode) {
+                outputSequence(outputIndex) = UTF8String.fromString(str)
+              }
+              else if (keyProjection.isOutputNode) {
+                parsedRecords.enqueue(UTF8String.fromString(str))
+              }
+            } else {
+              map = map + ((key, null))
             }
-            if(keyProjection.isOutputNode) {
-              parsedRecords.enqueue(map(key))
-            }
+            rowCounter += 1
+          }
             isKey = true
-
           }
         }
         case numRegExp() => {
-          val str = consume(c)
-          // pos = skip(reader, encoding, newPos, end, c)
-          if(!(str matches "\\d+")) {
-            if(inFilter) {
-              rowSequence(keyIndex) = str.toDouble
-              propagateFilter = true
-            }
-            if(projection.acceptAll || inChildren || inDescendants) {
-              map = map + ((key, (DoubleType, null)))
-            }
+          if (!inFilter && !inOutputs) {
+            skip(c)
           } else {
-            if(inFilter) {
-              rowSequence(keyIndex) = str.toLong
+            val str: String = if (inFilter || inOutputs) {
+              consume(c)
+            } else {
+              skip(c); ""
+            }
+            val _keySubType = keySubType match {
+              case arrayType: ArrayType =>
+                arrayType.elementType
+              case _ => keySubType
+            }
+            var v = if(_keySubType.isInstanceOf[DoubleType]) {
+              str.toDouble
+            } else if(_keySubType.isInstanceOf[LongType]) {
+              str.toLong
+            } else if(_keySubType.isInstanceOf[StringType]) {
+              // may happen if schema inferred to null and we replaced nulls
+              // with strings (in case of speculation)
+              str
+            } else if(inFilter) {
+              if(!(str matches "\\d+")) {
+                str.toDouble
+              } else {
+                str.toLong
+              }
+            } else {
+              null
+            }
+
+            if (inFilter) {
+              filterSequence(keyIndex) = v
               propagateFilter = true
             }
-            if(projection.acceptAll || inChildren || inDescendants) {
-              map = map + ((key, (LongType, null)))
+            map = map + ((key, v))
+            if (_keySubType.isInstanceOf[StringType]) {
+              v = UTF8String.fromString(str)
             }
+            if (projection.isOutputNode) {
+              outputSequence(outputIndex) = v
+            }
+            else if (keyProjection.isOutputNode) {
+              parsedRecords.enqueue(v)
+            }
+            rowCounter += 1
           }
           isKey = true
-          if(keyProjection.isOutputNode) {
-            parsedRecords.enqueue(map(key))
-          }
         }
         case 'n' => {
-          // ignore null fields if not already in projection
-          if(inFilter || inChildren || inDescendants) { map = map + ((key, (NullType, null))) }
-          if(keyProjection.isOutputNode) {
-            parsedRecords.enqueue(map(key))
+          skip(c)
+          if(inFilter || inOutputs) {
+          if (keyProjection.isOutputNode) {
+            parsedRecords.enqueue(null)
           }
+          rowCounter += 1
+        }
           isKey = true
-          pos = pos + stringSize("ull")
-          reader.skip(3)
         }
         case 'f' => {
-          if(inFilter) {
-            rowSequence(keyIndex) = false
+          if (!inFilter && !inOutputs) {
+            skip(c)
+          } else {
+          val str: String = consume(c)
+            val _keySubType = keySubType match {
+              case arrayType: ArrayType =>
+                arrayType.elementType
+              case _ => keySubType
+            }
+          var v = if (_keySubType.isInstanceOf[StringType]) {
+            "false"
+          } else {
+            false
+          }
+          if (inFilter) {
+            filterSequence(keyIndex) = false
             propagateFilter = true
           }
-          if(projection.acceptAll || inChildren || inDescendants) {
-            map = map + ((key, (BooleanType, null)))
+          map = map + ((key, v))
+          if (_keySubType.isInstanceOf[StringType]) {
+            v = UTF8String.fromString(str)
           }
-          if(keyProjection.isOutputNode) {
-            parsedRecords.enqueue(map(key))
+          if (projection.isOutputNode) {
+            outputSequence(outputIndex) = v
           }
+          else if (keyProjection.isOutputNode) {
+            parsedRecords.enqueue(v)
+          }
+          rowCounter += 1
+        }
           isKey = true
-          pos = pos + stringSize("alse")
-          reader.skip(4)
         }
         case 't' => {
-          if(inFilter) {
-            rowSequence(keyIndex) = true
-            propagateFilter = true
-          }
-          if(projection.acceptAll || inChildren || inDescendants) {
-            map = map + ((key, (BooleanType, null)))
-          }
-          if(keyProjection.isOutputNode) {
-            parsedRecords.enqueue(map(key))
+          if (!inFilter && !inOutputs) {
+            skip(c)
+          } else {
+            val str: String = consume(c)
+            val _keySubType = keySubType match {
+              case arrayType: ArrayType =>
+                arrayType.elementType
+              case _ => keySubType
+            }
+            var v = if (_keySubType.isInstanceOf[StringType]) {
+              "true"
+            } else {
+              true
+            }
+            if (inFilter) {
+              filterSequence(keyIndex) = true
+              propagateFilter = true
+            }
+            map = map + ((key, v))
+            if (_keySubType.isInstanceOf[StringType]) {
+              v = UTF8String.fromString(str)
+            }
+            if (projection.isOutputNode) {
+              outputSequence(outputIndex) = v
+            }
+            else if (keyProjection.isOutputNode) {
+              parsedRecords.enqueue(v)
+            }
+            rowCounter += 1
           }
           isKey = true
-          pos = pos + stringSize("rue")
-          reader.skip(3)
         }
         case '}' => {
-          if(map.isEmpty) {
-            return None
-          }
-          if(projection.hasFilter && predicateValues(0) == null) {
-            for((_, predicate) <- projection.filterVariables) {
-              predicate.propagate(predicateValues, rowSequence)
+          if (projection.hasFilter && predicateValues(0) == null) {
+            for ((_, predicate) <- projection.filterVariables) {
+              predicate.propagate(predicateValues, filterSequence)
             }
           }
-          if(projection.hasFilter && predicateValues(0) == false) {
+          if (projection.hasFilter && predicateValues(0) == false) {
             parsedRecords.clear()
             return None
           } else {
-            if(projection.isOutputNode) {
-              parsedRecords.enqueue(map)
+            if (projection.isOutputNode) {
+              parsedRecords.enqueue(outputSequence)
             }
             return Some(map)
           }
@@ -1398,11 +1640,13 @@ class Parser(val filePath : String = "",
       }
 
       if (propagateFilter && predicateValues(0) == null) {
-        projection.filterVariables(key).propagate(predicateValues, rowSequence)
+        projection.filterVariables(key).propagate(predicateValues, filterSequence)
       }
       if (propagateFilter && predicateValues(0) == false) {
         skip('{')
-        parsedRecords.clear()
+        if (!projection.isOutputNode && !projection.acceptAll) {
+          parsedRecords.clear()
+        }
         return None
       }
     }
@@ -1413,22 +1657,46 @@ class Parser(val filePath : String = "",
   }
 
   def parseArray(
-                      parentKey: String,
-                      _projection: ProjectionNode
-                    ): Option[(Any, Any)] = {
-    var mergedMaps = new HashMap[String, Any]()
-    var mergedArrType : (Any, Any) = (ArrayType(NullType), NullType)
-    var selectedType : DataType = NullType
+                  parentKey: String,
+                  _projection: ProjectionNode
+                ): Option[Any] = {
+    val arr = new ArrayBuffer[Any]()
 
-    val projection = if(_projection.childrenTree.contains("[*]")) {_projection.childrenTree("[*]")} else {_projection}
-    if(_projection.childrenTree.contains("[*]")) {
+    val projection = if (_projection.childrenTree.contains("[*]")) {
+      _projection.childrenTree("[*]")
+    } else {
+      _projection
+    }
+    if (_projection.childrenTree.contains("[*]")) {
       projection.acceptAll = projection.acceptAll || _projection.acceptAll
       projection.descendantsTree = _projection.descendantsTree ++ projection.descendantsTree
     }
-    if(!_projection.childrenTree.contains("[*]") && !projection.acceptAll && projection.descendantsTree.isEmpty) {
+    if (!_projection.childrenTree.contains("[*]") && !projection.acceptAll && projection.descendantsTree.isEmpty) {
       skip('[')
       return None
     }
+    val isOutputNode = projection.isOutputNode && !_projection.childrenTree.contains("[*]")
+    val isChildOutput =  projection.isOutputNode && _projection.childrenTree.contains("[*]")
+    val childProjection = if (isOutputNode) {
+      val p = new ProjectionNode(
+        projection.acceptAll,
+        false,
+        parentKey,
+        projection.filterVariables,
+        projection.nPredicates,
+        projection.rowMap,
+        projection.childrenTree,
+        projection.descendantsTree,
+        projection.filterString
+      )
+      p.sqlFilterVariables = projection.sqlFilterVariables
+      p.nSQLPredicates = projection.nPredicates
+      p.outputsRowMap = projection.outputsRowMap(parentKey)._3.asInstanceOf[HashMap[String, (Int, DataType, Any)]]
+      p
+    } else {
+      projection
+    }
+
     while (true) {
       val i = reader.read()
       if (i == -1) {
@@ -1438,77 +1706,136 @@ class Parser(val filePath : String = "",
       pos += charSize(i)
       c match {
         case '{' => {
-          val objType =
-            parseObjectType("[*]", projection)
-          objType match {
-            case Some(ot) => mergedMaps = mergedMaps.merged(ot)(reduceKey)
+          val obj =
+            parseObject("[*]", childProjection)
+          obj match {
+            case Some(o) => {
+              val map = o.asInstanceOf[HashMap[String, Any]]
+              if(projection.notDescending) {
+                val outputSequence = new Array[Any](childProjection.outputsRowMap.size)
+                for ((k, v) <- map) {
+                  if (childProjection.outputsRowMap.contains(k)) {
+                    val index = childProjection.outputsRowMap(k)._1
+                    val dataType = childProjection.outputsRowMap(k)._2
+                    if (dataType.isInstanceOf[StringType]) {
+                      outputSequence(index) = UTF8String.fromString(v.toString)
+                    } else {
+                      outputSequence(index) = v
+                    }
+                  }
+                }
+                arr.append(new GenericInternalRow(outputSequence))
+              } else if(map.nonEmpty) {
+                arr.append(map)
+              }
+            }
             case None => {}
           }
         }
         case '[' => {
-          val arrType =
-            parseArrayType(parentKey, projection)
-          arrType match {
-            case Some(at) => mergedArrType = SchemaInference.reduceKey(("_", mergedArrType), ("_", at))._2.asInstanceOf[(Any, Any)]
-            case None => {}
+          val _dataType = if(projection.outputsRowMap.contains(parentKey)) {projection.outputsRowMap(parentKey)._2} else {DataType}
+          val dataType = _dataType match {
+            case arrayType: ArrayType =>
+              arrayType.elementType
+            case _ => _dataType
           }
-        }
-        case '"' => {
-          skip(c)
-          if(projection.notDescending) {
-            selectedType = SchemaInference.selectType(selectedType, StringType)
-          }
-        }
-        case numRegExp() => {
-          val str = consume(c)
-          if(projection.notDescending) {
-            if(str matches "\\d+") {
-              selectedType = SchemaInference.selectType(selectedType, LongType)
-            } else {
-              selectedType = SchemaInference.selectType(selectedType, DoubleType)
+          val outputArr = dataType match {
+            case _: DoubleType =>
+              val str = consume('[')
+              ArrayData.toArrayData(str.trim.substring(1, str.size - 1).split(",").map(_.toDouble))
+            case _: LongType =>
+              val str = consume('[')
+              ArrayData.toArrayData(str.trim.substring(1, str.size - 1).split(",").map(_.toLong))
+            case _ => {
+              val arr2 = parseArray(parentKey, projection)
+              arr2 match {
+                case Some(a) => a
+                case None => ArrayData.toArrayData(Array())
+              }
             }
           }
-        }
-        case 'n' => {
-          pos = pos + stringSize("ull")
-          reader.skip(3)
-        }
-        case 'f' => {
-          pos = pos + stringSize("alse")
-          reader.skip(4)
-          if(projection.notDescending) {
-            selectedType = SchemaInference.selectType(selectedType, BooleanType)
+
+          if(isChildOutput) {
+            parsedRecords.enqueue(outputArr)
           }
+          arr.append(outputArr)
+
         }
-        case 't' => {
-          pos = pos + stringSize("rue")
-          reader.skip(3)
-          if(projection.notDescending) {
-            selectedType = SchemaInference.selectType(selectedType, BooleanType)
+        case _ => {
+          if (!projection.notDescending && c != ']' && !isWhiteSpace(c) && c != ',') {
+            if(c == '"') { skip(c) }
+            skip('[')
+            return None
           }
-        }
-        case ']' => {
-          if(mergedMaps.nonEmpty) {
-            if(projection.isOutputNode) {
-              parsedRecords.enqueue((ArrayType(NullType), mergedMaps))
+            c match {
+              case '"' => {
+                val str = consume(c)
+                arr.append(UTF8String.fromString(str))
+                if(isChildOutput) {
+                  parsedRecords.enqueue(UTF8String.fromString(str))
+                }
+              }
+              case numRegExp() => {
+                val str = consume(c)
+                val dataType = projection.outputsRowMap(parentKey)._2
+                val _dataType = dataType match {
+                  case arrayType: ArrayType =>
+                    arrayType.elementType
+                  case _ => dataType
+                }
+
+                val v = _dataType match {
+                  case _: DoubleType =>
+                    str.toDouble
+                  case _: LongType =>
+                    str.toLong
+                  case _: StringType =>
+                    UTF8String.fromString(str)
+                  case _ =>
+                    null
+                }
+                arr.append(v)
+                if(isChildOutput) {
+                  parsedRecords.enqueue(v)
+                }
+              }
+              case 'n' => {
+                skip(c)
+                arr.append(null)
+                if(isChildOutput) {
+                  parsedRecords.enqueue(null)
+                }
+              }
+              case 'f' => {
+                skip(c)
+                  arr.append(false)
+                if(isChildOutput) {
+                  parsedRecords.enqueue(false)
+                }
+              }
+              case 't' => {
+                skip(c)
+                  arr.append(true)
+                if(isChildOutput) {
+                  parsedRecords.enqueue(true)
+                }
+              }
+              case ']' => {
+                if(arr.isEmpty && !projection.notDescending) { return None }
+                val v = ArrayData.toArrayData(arr)
+                if(isOutputNode) {
+                  parsedRecords.enqueue(v)
+                }
+                if(projection.notDescending) {
+                  return Some(v)
+                }
+                else {
+                  return Some(arr)
+                }
+              }
+              case _ => {} // skip character
             }
-            return Some((ArrayType(NullType), mergedMaps))
-          }
-          if(mergedArrType._2 != NullType) {
-            if(projection.isOutputNode) {
-              parsedRecords.enqueue((ArrayType(NullType), mergedArrType))
-            }
-            return Some((ArrayType(NullType), mergedArrType))
-          }
-          if(projection.notDescending && selectedType != NullType) {
-            if(projection.isOutputNode) {
-              parsedRecords.enqueue((ArrayType(NullType), selectedType))
-            }
-            return Some((ArrayType(NullType), selectedType))
-          }
-          return None
         }
-        case _ => {} // skip character
       }
     }
     throw new Exception(
@@ -1516,9 +1843,9 @@ class Parser(val filePath : String = "",
     )
   }
 
-  /*************************************
-   SCHEMA INFERENCE FUNCTIONS (same as row parsing but returns types)
-   *******************************/
+  /** ***********************************
+   * SCHEMA INFERENCE FUNCTIONS (same as row parsing but returns types)
+   * ***************************** */
   def parseType(
                  currentChar: Char = '\u0000',
                  projection: ProjectionNode
@@ -1551,7 +1878,11 @@ class Parser(val filePath : String = "",
         case '"' => {
           val prevPos = pos
           skip(c)
-          val t = if(pos-prevPos <= 1) {  (NullType, null) } else { (StringType, null) } // empty strings are treated as NullType (this solves an issue in one dataset, where they provide an empty string for missing values
+          val t = if (pos - prevPos <= 1) {
+            (NullType, null)
+          } else {
+            (StringType, null)
+          } // empty strings are treated as NullType (this solves an issue in one dataset, where they provide an empty string for missing values
           parsedRecords.enqueue(t)
           return Some(t)
         }
@@ -1574,8 +1905,8 @@ class Parser(val filePath : String = "",
           return Some((BooleanType, null))
         }
         case numRegExp() => {
-          val str= consume(c)
-          if(!(str matches "\\d+")) {
+          val str = consume(c)
+          if (!(str matches "\\d+")) {
             parsedRecords.enqueue((DoubleType, null))
             return Some((DoubleType, null))
           }
@@ -1601,7 +1932,7 @@ class Parser(val filePath : String = "",
   def parseObjectType(
                        parentKey: String,
                        projection: ProjectionNode,
-                     ): Option[HashMap[String, Any]]= {
+                     ): Option[HashMap[String, Any]] = {
     var map = HashMap[String, Any]()
     var isKey = true
     var key = ""
@@ -1609,7 +1940,7 @@ class Parser(val filePath : String = "",
     var inChildren = false
     var inDescendants = false
     var keyIndex = -1
-    var keyProjection : ProjectionNode = new ProjectionNode()
+    var keyProjection: ProjectionNode = new ProjectionNode()
     val rowSequence = new Array[Any](projection.rowMap.size)
     val predicateValues = new Array[Any](projection.nPredicates)
     while (true) { // parse until full object or end of file
@@ -1623,31 +1954,41 @@ class Parser(val filePath : String = "",
       var propagateFilter = false
       c match {
         case '{' => {
-
+          val prevPos = pos
           val objType =
             parseObjectType(key, keyProjection)
           objType match {
             case Some(o) => {
-              var newSubMap = new HashMap[String, Any]()
-              for((k,v) <- o) {
-                if(projection.descendantsTree.contains(k) && projection.descendantsTree(k).parentKey.equals(parentKey)){
-                  //                  map = map + ((".." + k,v))
-                  map = map + ((k,v))
-                } else if((keyProjection.notDescending && keyProjection.acceptAll) || keyProjection.childrenTree.contains(k)) {
-                  newSubMap = newSubMap + ((k, v))
-                } else {
-                  map = map + ((k,v))
+              if(projection.childrenTree.contains(key) || projection.acceptAll) {
+                map = map + ((key, o))
+              } else {
+                var newSubMap = new HashMap[String, Any]()
+                for ((k, v) <- o) {
+                  if (projection.descendantsTree.contains(k) && projection.descendantsTree(k).parentKey.equals(parentKey)) {
+                    //                  map = map + ((".." + k,v))
+                    map = map + ((k, v))
+                  } else if ((keyProjection.notDescending && keyProjection.acceptAll) || keyProjection.childrenTree.contains(k)) {
+                    newSubMap = newSubMap + ((k, v))
+                  } else {
+                    map = map + ((k, v))
+                  }
                 }
+                map = map + ((key, newSubMap))
               }
-              map = map + ((key, newSubMap))
+              if(inFilter) {
+                rowSequence(keyIndex) = "" // only currently checking if a nested object is not null
+              }
             }
             case None => {}
           }
-          if(inFilter) {
-            // TODO fix it (may require passing the inputStream to reset the position
-            // Only filter for Geometry is supported for this type
-            // has to be a nested filter otherwise
-            // ignore it for now
+          if (inFilter) {
+            // TODO fix it
+            // Only filter for Geometry is supported for now
+            if(key.equals("geometry")) {
+              repositionReader(prevPos)
+              val str = consume(c)
+              rowSequence(keyIndex) = str
+            }
             propagateFilter = true
           }
           isKey = true
@@ -1660,7 +2001,7 @@ class Parser(val filePath : String = "",
             skip(c)
             // encoded as string because a geometry can have a different dimension
             // based on type, e.g. points are 1d, polygons are 3d, etc.
-            if(projection.acceptAll || inChildren || inDescendants) {
+            if (projection.acceptAll || inChildren || inDescendants) {
               map = map + ((key, (StringType, null)))
             }
           } else {
@@ -1668,9 +2009,9 @@ class Parser(val filePath : String = "",
               parseArrayType(key, keyProjection)
             arrType match {
               case Some(at) => {
-                if(!inChildren && !inDescendants && !projection.acceptAll) {
+                if (!inChildren && !inDescendants && !projection.acceptAll) {
                   val subType = at._2.asInstanceOf[HashMap[String, Any]]
-                  for((k,v) <- subType) {
+                  for ((k, v) <- subType) {
                     //                      for((_k,v) <- subType) {
                     //                      val k  = if(projection.descendantsTree(_k).parentKey.equals(parentKey)) { ".." + _k } else {_k}
                     map = map + ((k, (ArrayType(NullType), v)))
@@ -1682,12 +2023,12 @@ class Parser(val filePath : String = "",
               case None => {}
             }
 
-            if(inFilter) {
+            if (inFilter) {
               // TODO fix it (may require passing the inputStream to reset the position
               // Only filter for arrays with basic types is supported
               // has to be a nested filter otherwise
               // ignore it for now
-              if(arrType.nonEmpty)
+              if (arrType.nonEmpty)
                 rowSequence(keyIndex) = arrType.get
               propagateFilter = true
             }
@@ -1704,20 +2045,24 @@ class Parser(val filePath : String = "",
             inFilter = projection.rowMap.contains(key)
             inChildren = projection.childrenTree.contains(key)
             inDescendants = projection.descendantsTree.contains(key)
-            if(!projection.acceptAll && !projection.hasDescendants && !inChildren && !inFilter) {
+            if (!projection.acceptAll && !projection.hasDescendants && !inChildren && !inFilter) {
               skip()
               isKey = true
             } else {
-              if(inFilter) {
+              if (inFilter) {
                 val (_keyIndex, _, _) = projection.rowMap(key)
                 keyIndex = _keyIndex
               }
-              keyProjection = if(inChildren) {projection.childrenTree(key) } else if(inDescendants) { projection.descendantsTree(key) } else {
+              keyProjection = if (inChildren) {
+                projection.childrenTree(key)
+              } else if (inDescendants) {
+                projection.descendantsTree(key)
+              } else {
                 new ProjectionNode()
               }
               keyProjection.acceptAll = projection.acceptAll || keyProjection.acceptAll
               keyProjection.descendantsTree = keyProjection.descendantsTree ++ projection.descendantsTree
-              if(projection.hasDescendants && !inChildren && !inDescendants) {
+              if (projection.hasDescendants && !inChildren && !inDescendants) {
                 keyProjection.notDescending = false
               }
 
@@ -1725,21 +2070,23 @@ class Parser(val filePath : String = "",
           } else {
 
             val prevPos = pos
-            val str = if(inFilter) {
+            val str = if (inFilter) {
               consume(c)
-            } else { skip(c); ""}
-            if(inFilter) {
-              rowSequence(keyIndex) = str
+            } else {
+              skip(c); ""
+            }
+            if (inFilter) {
+              rowSequence(keyIndex) = str.substring(1, str.length-1)
               propagateFilter = true
             }
-            if(projection.acceptAll || inChildren || inDescendants) {
-              if(pos-prevPos <= 1) {
+            if (projection.acceptAll || inChildren || inDescendants) {
+              if (pos - prevPos <= 1) {
                 map = map + ((key, (NullType, null)))
               } else {
                 map = map + ((key, (StringType, null)))
               }
             }
-            if(keyProjection.isOutputNode) {
+            if (keyProjection.isOutputNode) {
               parsedRecords.enqueue(map(key))
             }
             isKey = true
@@ -1749,32 +2096,34 @@ class Parser(val filePath : String = "",
         case numRegExp() => {
           val str = consume(c)
           // pos = skip(reader, encoding, newPos, end, c)
-          if(!(str matches "\\d+")) {
-            if(inFilter) {
+          if (!(str matches "\\d+")) {
+            if (inFilter) {
               rowSequence(keyIndex) = str.toDouble
               propagateFilter = true
             }
-            if(projection.acceptAll || inChildren || inDescendants) {
+            if (projection.acceptAll || inChildren || inDescendants) {
               map = map + ((key, (DoubleType, null)))
             }
           } else {
-            if(inFilter) {
+            if (inFilter) {
               rowSequence(keyIndex) = str.toLong
               propagateFilter = true
             }
-            if(projection.acceptAll || inChildren || inDescendants) {
+            if (projection.acceptAll || inChildren || inDescendants) {
               map = map + ((key, (LongType, null)))
             }
           }
           isKey = true
-          if(keyProjection.isOutputNode) {
+          if (keyProjection.isOutputNode) {
             parsedRecords.enqueue(map(key))
           }
         }
         case 'n' => {
           // ignore null fields if not already in projection
-          if(inFilter || inChildren || inDescendants) { map = map + ((key, (NullType, null))) }
-          if(keyProjection.isOutputNode) {
+          if (inFilter || inChildren || inDescendants) {
+            map = map + ((key, (NullType, null)))
+          }
+          if (keyProjection.isOutputNode) {
             parsedRecords.enqueue(map(key))
           }
           isKey = true
@@ -1782,14 +2131,14 @@ class Parser(val filePath : String = "",
           reader.skip(3)
         }
         case 'f' => {
-          if(inFilter) {
+          if (inFilter) {
             rowSequence(keyIndex) = false
             propagateFilter = true
           }
-          if(projection.acceptAll || inChildren || inDescendants) {
+          if (projection.acceptAll || inChildren || inDescendants) {
             map = map + ((key, (BooleanType, null)))
           }
-          if(keyProjection.isOutputNode) {
+          if (keyProjection.isOutputNode) {
             parsedRecords.enqueue(map(key))
           }
           isKey = true
@@ -1797,14 +2146,14 @@ class Parser(val filePath : String = "",
           reader.skip(4)
         }
         case 't' => {
-          if(inFilter) {
+          if (inFilter) {
             rowSequence(keyIndex) = true
             propagateFilter = true
           }
-          if(projection.acceptAll || inChildren || inDescendants) {
+          if (projection.acceptAll || inChildren || inDescendants) {
             map = map + ((key, (BooleanType, null)))
           }
-          if(keyProjection.isOutputNode) {
+          if (keyProjection.isOutputNode) {
             parsedRecords.enqueue(map(key))
           }
           isKey = true
@@ -1812,19 +2161,19 @@ class Parser(val filePath : String = "",
           reader.skip(3)
         }
         case '}' => {
-          if(map.isEmpty) {
+          if (map.isEmpty && !projection.isOutputNode) {
             return None
           }
-          if(projection.hasFilter && predicateValues(0) == null) {
-            for((_, predicate) <- projection.filterVariables) {
+          if (projection.hasFilter && predicateValues(0) == null) {
+            for ((_, predicate) <- projection.filterVariables) {
               predicate.propagate(predicateValues, rowSequence)
             }
           }
-          if(projection.hasFilter && predicateValues(0) == false) {
+          if (projection.hasFilter && predicateValues(0) == false) {
             parsedRecords.clear()
             return None
           } else {
-            if(projection.isOutputNode) {
+            if (projection.isOutputNode) {
               parsedRecords.enqueue(map)
             }
             return Some(map)
@@ -1838,7 +2187,9 @@ class Parser(val filePath : String = "",
       }
       if (propagateFilter && predicateValues(0) == false) {
         skip('{')
-        parsedRecords.clear()
+        if (!projection.isOutputNode && !projection.acceptAll) {
+          parsedRecords.clear()
+        }
         return None
       }
     }
@@ -1853,18 +2204,40 @@ class Parser(val filePath : String = "",
                       _projection: ProjectionNode
                     ): Option[(Any, Any)] = {
     var mergedMaps = new HashMap[String, Any]()
-    var mergedArrType : (Any, Any) = (ArrayType(NullType), NullType)
-    var selectedType : DataType = NullType
+    var mergedArrType: (Any, Any) = (ArrayType(NullType), NullType)
+    var selectedType: DataType = NullType
 
-    val projection = if(_projection.childrenTree.contains("[*]")) {_projection.childrenTree("[*]")} else {_projection}
-    if(_projection.childrenTree.contains("[*]")) {
+    val projection = if (_projection.childrenTree.contains("[*]")) {
+      _projection.childrenTree("[*]")
+    } else {
+      _projection
+    }
+    if (_projection.childrenTree.contains("[*]")) {
       projection.acceptAll = projection.acceptAll || _projection.acceptAll
       projection.descendantsTree = _projection.descendantsTree ++ projection.descendantsTree
     }
-    if(!_projection.childrenTree.contains("[*]") && !projection.acceptAll && projection.descendantsTree.isEmpty) {
+    if (!_projection.childrenTree.contains("[*]") && !projection.acceptAll && projection.descendantsTree.isEmpty) {
       skip('[')
       return None
     }
+    val isOutputNode = projection.isOutputNode && !_projection.childrenTree.contains("[*]")
+    val isChildOutput =  projection.isOutputNode && _projection.childrenTree.contains("[*]")
+    val childProjection = if (isOutputNode) {
+      new ProjectionNode(
+        projection.acceptAll,
+        false,
+        parentKey,
+        projection.filterVariables,
+        projection.nPredicates,
+        projection.rowMap,
+        projection.childrenTree,
+        projection.descendantsTree,
+        projection.filterString
+      )
+    } else {
+      projection
+    }
+
     while (true) {
       val i = reader.read()
       if (i == -1) {
@@ -1875,7 +2248,7 @@ class Parser(val filePath : String = "",
       c match {
         case '{' => {
           val objType =
-            parseObjectType("[*]", projection)
+            parseObjectType("[*]", childProjection)
           objType match {
             case Some(ot) => mergedMaps = mergedMaps.merged(ot)(reduceKey)
             case None => {}
@@ -1891,14 +2264,14 @@ class Parser(val filePath : String = "",
         }
         case '"' => {
           skip(c)
-          if(projection.notDescending) {
+          if (projection.notDescending) {
             selectedType = SchemaInference.selectType(selectedType, StringType)
           }
         }
         case numRegExp() => {
           val str = consume(c)
-          if(projection.notDescending) {
-            if(str matches "\\d+") {
+          if (projection.notDescending) {
+            if (str matches "\\d+") {
               selectedType = SchemaInference.selectType(selectedType, LongType)
             } else {
               selectedType = SchemaInference.selectType(selectedType, DoubleType)
@@ -1912,33 +2285,35 @@ class Parser(val filePath : String = "",
         case 'f' => {
           pos = pos + stringSize("alse")
           reader.skip(4)
-          if(projection.notDescending) {
+          if (projection.notDescending) {
             selectedType = SchemaInference.selectType(selectedType, BooleanType)
           }
         }
         case 't' => {
           pos = pos + stringSize("rue")
           reader.skip(3)
-          if(projection.notDescending) {
+          if (projection.notDescending) {
             selectedType = SchemaInference.selectType(selectedType, BooleanType)
           }
         }
         case ']' => {
-          if(mergedMaps.nonEmpty) {
-            if(projection.isOutputNode) {
+          if (mergedMaps.nonEmpty) {
+            if (isOutputNode) {
               parsedRecords.enqueue((ArrayType(NullType), mergedMaps))
             }
             return Some((ArrayType(NullType), mergedMaps))
           }
-          if(mergedArrType._2 != NullType) {
-            if(projection.isOutputNode) {
+          if (mergedArrType._2 != NullType) {
+            if (isOutputNode) {
               parsedRecords.enqueue((ArrayType(NullType), mergedArrType))
             }
             return Some((ArrayType(NullType), mergedArrType))
           }
-          if(projection.notDescending && selectedType != NullType) {
-            if(projection.isOutputNode) {
+          if (projection.notDescending && selectedType != NullType) {
+            if (isOutputNode) {
               parsedRecords.enqueue((ArrayType(NullType), selectedType))
+            } else if(isChildOutput) {
+              parsedRecords.enqueue((selectedType, null))
             }
             return Some((ArrayType(NullType), selectedType))
           }
@@ -1952,7 +2327,7 @@ class Parser(val filePath : String = "",
     )
   }
 
-  def close() : Unit = {
+  def close(): Unit = {
     reader.close()
   }
 

@@ -4,7 +4,7 @@ import org.apache.spark.sql.types.DataType
 import scala.collection.immutable.HashMap
 
 class ProjectionNode(var acceptAll: Boolean = false,
-                     val isOutputNode : Boolean = false,
+                     var isOutputNode : Boolean = false,
                      val parentKey: String = "",
                      val filterVariables: HashMap[String, Variable] = new HashMap[String, Variable](),
                      val nPredicates : Int = 0,

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 University of California, Riverside
+ * Copyright ....
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,9 +71,14 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
       }
       currentNode = nodeQueue.dequeue()
     }
+    nodeQueue.clear()
+
     currentNode.sqlFilterVariables = variables
     currentNode.nSQLPredicates = nPredicates
     currentNode.outputsRowMap = options.rowMap
+
+    rowMapToProjection(currentNode)
+
     val filePath = inputPartition.path
     // Initialize partition
     partitionId = inputPartition.id
@@ -106,6 +111,17 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
     println(parser.pda)
   }
 
+  def rowMapToProjection(projectionNode : ProjectionNode): Unit = {
+    for((k,v) <- projectionNode.childrenTree ++ projectionNode.descendantsTree) {
+      if(projectionNode.outputsRowMap contains k) {
+        val (_, _, subType) = projectionNode.outputsRowMap(k)
+        if(subType != null) {
+          v.outputsRowMap = subType.asInstanceOf[HashMap[String, (Int, DataType, Any)]]
+          rowMapToProjection(v)
+        }
+      }
+    }
+  }
   override def next(): Boolean = {
 
     val (hasNext, _value, _) = parser.getNextMatch(

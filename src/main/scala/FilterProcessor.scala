@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 University of California, Riverside
+ * Copyright ....
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -213,6 +213,7 @@ class LessThan(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
+    if(v1 == null || v2 == null) { return false }
     val _v1 = if(v1.isInstanceOf[Double]) {
       v1.asInstanceOf[Double]
     } else {
@@ -232,6 +233,7 @@ class LessThanOrEquals(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
+    if(v1 == null || v2 == null) { return false }
     val _v1 = if(v1.isInstanceOf[Double]) {
       v1.asInstanceOf[Double]
     } else {
@@ -251,6 +253,7 @@ class GreaterThan(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
+    if(v1 == null || v2 == null) { return false }
     val _v1 = if(v1.isInstanceOf[Double]) {
       v1.asInstanceOf[Double]
     } else {
@@ -270,6 +273,7 @@ class GreaterThanOrEquals(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
+    if(v1 == null || v2 == null) { return false }
     val _v1 = if(v1.isInstanceOf[Double]) {
       v1.asInstanceOf[Double]
     } else {
@@ -289,6 +293,7 @@ class In(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
+    if(v1 == null || v2 == null) { return false }
     v2.asInstanceOf[List[Any]] contains v1
   }
 }
@@ -298,9 +303,10 @@ class StringContains(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
-    val _v1 = if(v1.isInstanceOf[UTF8String]) { v1.asInstanceOf[UTF8String].toString } else { v1.asInstanceOf[String] }
-    val _v2 = if(v2.isInstanceOf[UTF8String]) { v2.asInstanceOf[UTF8String].toString } else { v2.asInstanceOf[String] }
-    _v1 contains _v2.asInstanceOf[String]
+    if(v1 == null || v2 == null) { return false }
+    val _v1 : String = if(v1.isInstanceOf[UTF8String]) { v1.asInstanceOf[UTF8String].toString } else { v1.asInstanceOf[String] }
+    val _v2 : String = if(v2.isInstanceOf[UTF8String]) { v2.asInstanceOf[UTF8String].toString } else { v2.asInstanceOf[String] }
+    (_v1 contains _v2) || (_v2(0) == '"' && _v2(_v2.length-1) == '"' && (_v1 contains _v2.substring(1,_v2.length-1)))
   }
 }
 
@@ -309,9 +315,10 @@ class StringStartsWith(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
-    val _v1 = if(v1.isInstanceOf[UTF8String]) { v1.asInstanceOf[UTF8String].toString } else { v1.asInstanceOf[String] }
-    val _v2 = if(v2.isInstanceOf[UTF8String]) { v2.asInstanceOf[UTF8String].toString } else { v2.asInstanceOf[String] }
-    _v1 startsWith _v2.asInstanceOf[String]
+    if(v1 == null || v2 == null) { return false }
+    val _v1 : String = if(v1.isInstanceOf[UTF8String]) { v1.asInstanceOf[UTF8String].toString } else { v1.asInstanceOf[String] }
+    val _v2 : String = if(v2.isInstanceOf[UTF8String]) { v2.asInstanceOf[UTF8String].toString } else { v2.asInstanceOf[String] }
+    (_v1 startsWith _v2) || (_v2(0) == '"' && _v2(_v2.length-1) == '"' && (_v1 startsWith _v2.substring(1,_v2.length-1)))
   }
 }
 
@@ -320,9 +327,10 @@ class StringEndsWith(
     override val parent: Predicate
 ) extends BinaryPredicate(index, parent) {
   override def operator(v1: Any, v2: Any): Boolean = {
-    val _v1 = if(v1.isInstanceOf[UTF8String]) { v1.asInstanceOf[UTF8String].toString } else { v1.asInstanceOf[String] }
-    val _v2 = if(v2.isInstanceOf[UTF8String]) { v2.asInstanceOf[UTF8String].toString } else { v2.asInstanceOf[String] }
-    _v1 endsWith _v2.asInstanceOf[String]
+    if(v1 == null || v2 == null) { return false }
+    val _v1 : String = if(v1.isInstanceOf[UTF8String]) { v1.asInstanceOf[UTF8String].toString } else { v1.asInstanceOf[String] }
+    val _v2 : String = if(v2.isInstanceOf[UTF8String]) { v2.asInstanceOf[UTF8String].toString } else { v2.asInstanceOf[String] }
+    (_v1 endsWith  _v2) || (_v2(0) == '"' && _v2(_v2.length-1) == '"' && (_v1 endsWith  _v2.substring(1,_v2.length-1)))
   }
 }
 
@@ -332,6 +340,7 @@ class GeometryType(
 ) extends BinaryPredicate(index, parent) {
   val geom = new GeometryUDT()
   override def operator(v1: Any, v2: Any): Boolean = {
+    if(v1 == null || v2 == null) { return false }
     val _v1 = if(v1.isInstanceOf[UTF8String]) {v1.asInstanceOf[UTF8String].toString} else {v1.asInstanceOf[String]}
     val geomObj = geom.deserialize(_v1)
     
@@ -346,6 +355,7 @@ class GeometryWithin(
 ) extends BinaryPredicate(index, parent) {
   val geom = new GeometryUDT()
   override def operator(v1: Any, v2: Any): Boolean = {
+    if(v1 == null || v2 == null) { return false }
     val geom1 = geom.deserialize(v1)
     val geom2 = v2.asInstanceOf[Geometry]
     return geom1.within(geom2)

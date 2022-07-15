@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 University of California, Riverside
+ * Copyright ...
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ object Main {
     val extraFields = if (args.length > 6 && args(6) == "extraFields" || args.length > 7 && args(7) == "extraFields") { true } else { false }
     val keepIndex = if(args.length > 6 && args(6) == "keepIndex" || args.length > 7 && args(7) == "keepIndex" ) { true } else { false }
     val spark =
-      SparkSession.builder().appName("jsondsp").getOrCreate()
+      SparkSession.builder().appName("dsJSON").getOrCreate()
       
     val pathGlobFilter = ""
     val recursive = false
@@ -58,7 +58,7 @@ object Main {
       )
 //      println(sqlDF.take(2).toString)
     } else {
-      sqlDF.take(2).foreach(row => {println(row.toString())})
+      sqlDF.take(10).foreach(row => {println(row.toString())})
     }
   }
 }
@@ -79,6 +79,7 @@ object JsonStream {
 
     // Register the Geometry user-defined data type
     val spark = SparkSession.builder().getOrCreate()
+
     SparkSQLRegistration.registerUDT
     
     return spark.read
@@ -86,7 +87,7 @@ object JsonStream {
       .option("jsonPath", jsonPath)
       .option("pathGlobFilter", pathGlobFilter)
       .option("recursiveFileLookup", recursive.toString())
-      .option("partitioningStrategy", partitioningStrategy)
+      .option("partitioningStrategy", "speculation") // TODO: fix option
       .option("schemaBuilder", schemaBuilder)
       .option("extraFields", extraFields.toString())
       .option("keepIndex", keepIndex.toString())

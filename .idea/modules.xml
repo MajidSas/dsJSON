@@ -2,8 +2,8 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/jsondsp.iml" filepath="$PROJECT_DIR$/.idea/modules/jsondsp.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/jsondsp-build.iml" filepath="$PROJECT_DIR$/.idea/modules/jsondsp-build.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/dsJSON.iml" filepath="$PROJECT_DIR$/.idea/modules/dsJSON.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/dsJSON-build.iml" filepath="$PROJECT_DIR$/.idea/modules/dsJSON-build.iml" />
     </modules>
   </component>
 </project>

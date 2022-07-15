@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 University of California, Riverside
+ * Copyright ...
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,8 +68,8 @@ object SchemaInference {
       m: HashMap[String, Any],
       nullToString: Boolean = false,
       detectGeometry: Boolean = false,
-      noComplexNesting: Boolean = true, // converts big nested fields to string
-      maxSubFields: Int = 100
+      noComplexNesting: Boolean = false, // converts big nested fields to string
+      maxSubFields: Int = 1000
   ): StructType = {
     var schema = new StructType()
     for ((k, v) <- m) {
@@ -129,7 +129,6 @@ object SchemaInference {
   def reduceKey(from1: (String, Any), from2: (String, Any)): (String, Any) = {
     val (k, v1) = from1
     val (_, v2) = from2
-
     if (v1.isInstanceOf[HashMap[_, _]]) {
       val t1 = v1.asInstanceOf[HashMap[String, Any]]
       if (v2.isInstanceOf[HashMap[_, _]]) {
@@ -142,12 +141,30 @@ object SchemaInference {
       return (k, v2)
     }
 
-    val (_t1, _subT1) = v1.asInstanceOf[(Any, Any)]
-    val (_t2, _subT2) = v2.asInstanceOf[(Any, Any)]
+    val (_t1, __subT1) = v1.asInstanceOf[(Any, Any)]
+    val (_t2, __subT2) = v2.asInstanceOf[(Any, Any)]
+    val _subT1 = if(__subT1.isInstanceOf[DataType]) {
+      (__subT1, null)
+    } else {  __subT1 }
+
+    val _subT2 = if(__subT2.isInstanceOf[DataType]) {
+      (__subT2, null)
+    } else {  __subT2 }
+
     if (_t1.isInstanceOf[ArrayType]) {
       if (_t2.isInstanceOf[ArrayType]) {
-        val (_, newT) = reduceKey((k, _subT1), (k, _subT2))
-        return (k, (ArrayType(NullType), newT))
+        val newT = reduceKey((k, _subT1), (k, _subT2))._2
+        if(newT.isInstanceOf[HashMap[_,_]]) {
+          return (k, (ArrayType(NullType), newT))
+        }
+        else {
+          val _newT = newT.asInstanceOf[(Any, Any)]
+          if(_newT._2 == null) {
+            return (k, (ArrayType(NullType), _newT._1))
+          } else {
+            return (k, (ArrayType(NullType), _newT))
+          }
+        }
       } else {
         return (k, v1)
       }
@@ -177,13 +194,13 @@ object SchemaInference {
       limit: Int,
       useWhole: Boolean,
       getTokens: Boolean,
+      getTokensOnly: Boolean,
       jsonOptions: JsonOptions
   ): (HashMap[String, Any], HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]], Int) = {
     var parsedRecords = new ArrayBuffer[Any];
     var encounteredTokens = HashMap[String, Set[(Int, Int, Int, List[Int], List[Char])]]()
 
     val projection = jsonOptions.getProjectionTree()("*")
-
 
     val parser : Parser = new Parser(
       partition.path,
@@ -208,6 +225,7 @@ object SchemaInference {
           projection,
           getTokens,
           true, // parse type
+          getTokensOnly=getTokensOnly
         )
 //      println(value)
       found = _found
@@ -243,6 +261,8 @@ object SchemaInference {
     var mergedMaps = new HashMap[String, Any]()
     val filePaths = jsonOptions.filePaths
     val limit = 1000
+    val getTokens = if(jsonOptions.partitioningStrategy.equals("speculation"))  { true } else { false }
+    val getTokensOnly = if(jsonOptions.partitioningStrategy.equals("speculation") && jsonOptions.schemaBuilder.equals("fullPass")) { true } else { false }
     var nParsedRecords = 0
     var i = 0
     while (nParsedRecords < limit && i < filePaths.size) {
@@ -252,10 +272,13 @@ object SchemaInference {
           partition,
           limit - nParsedRecords,
           false,
-          true,
+          getTokens,
+          getTokensOnly,
           jsonOptions
         )
-      mergedMaps = mergedMaps.merged(schemaMap)(reduceKey)
+      if(!getTokensOnly) {
+        mergedMaps = mergedMaps.merged(schemaMap)(reduceKey)
+      }
       nParsedRecords += _nParsedRecords
       encounteredTokens = _encounteredTokens
 //      encounteredTokens =
@@ -281,6 +304,7 @@ object SchemaInference {
           partition._1.asInstanceOf[JsonInputPartition],
           -1,
           true,
+          false,
           false,
           jsonOptions
         )

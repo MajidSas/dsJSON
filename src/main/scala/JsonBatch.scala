@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 University of California, Riverside
+ * Copyright ....
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,8 @@
 
 package edu.ucr.cs.bdlab
 
-import org.apache.spark.sql.connector.read.{
-  Batch,
-  PartitionReaderFactory,
-  InputPartition
-}
-import org.apache.spark.sql.util.CaseInsensitiveStringMap
-import scala.collection.mutable.ArrayBuffer
-import org.apache.spark.SparkContext
+import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReaderFactory}
 import org.apache.spark.sql.types._
-import scala.util.Try
-import org.apache.spark.sql.sources.Filter
 
 
 class JsonBatch(

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 University of California, Riverside
+ * Copyright ...
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -195,7 +195,7 @@ def speculate(
         partitionInitialState = speculationKeys(token)._5
         partitionLabel = token
         if (partitionLevel > partitionInitialState.length) {
-
+          if(pda.states(0).stateType.equals("array")) {partitionLevel-=1}
           shiftedEndIndex = shiftedEndIndex + parser.skipLevels(partitionLevel - partitionState) + 2
           partitionLevel = partitionState
           skippedLevels = true
@@ -243,7 +243,7 @@ def speculate(
       .reverse
     var speculationKeys = new HashMap[String, (Int, Int, Int, List[Int], List[Char])]()
     tokenLevelsSorted
-      .filter(x => x._2._3 >= 1000)
+        .filter(x => x._2._3 >= 1000)
       .foreach(x => {
       speculationKeys = speculationKeys + (x._1 -> x._2)
       })
@@ -446,6 +446,8 @@ def speculate(
       partition: JsonInputPartition,
       options: JsonOptions
   ): (String, Long, Long, ArrayBuffer[String], ArrayBuffer[Long], Boolean) = {
+    // TODO: fix currently doesn't work after changing to byteStream
+    // quick fix to just return to previous version that works on encoded stream
     val ARRAY_START : Byte = 91
     val ARRAY_END : Byte = 93
     val OBJECT_START : Byte = 123
@@ -596,8 +598,6 @@ def speculate(
 
     }
 
-    byteStream.close()
-
     val finalSyntaxStack = new ArrayBuffer[String]()
     val finalPosStack = new ArrayBuffer[Long]()
 
@@ -621,6 +621,8 @@ def speculate(
       finalPosStack.append(p)
       pos = p
     }
+
+    byteStream.close()
 
     println("######### getEndState ############")
     println(finalSyntaxStack)

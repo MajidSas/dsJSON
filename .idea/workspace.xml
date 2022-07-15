@@ -29,11 +29,33 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="dad330fe-0e37-4c65-b4d0-44e5f4a2bf92" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/src/main/scala/DataframeJoin.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.name" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/compiler.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/compiler.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules/jsondsp-build.iml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/modules/jsondsp.iml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/scala_compiler.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/scala_compiler.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/FilterProcessor.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/FilterProcessor.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/GeometryUDT.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/GeometryUDT.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonBatch.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonBatch.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonInputPartition.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonInputPartition.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonOptions.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonOptions.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonPartitionReader.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonPartitionReader.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonPartitionReaderFactory.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonPartitionReaderFactory.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonScan.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonScan.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonScanBuilder.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonScanBuilder.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonSource.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonSource.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonTable.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonTable.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/Main.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Main.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/PDA.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/PDA.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/Parser.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Parser.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/Partitioning.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Partitioning.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/PathProcessor.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/PathProcessor.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/ProjectionNode.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/ProjectionNode.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/SchemaInference.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/SchemaInference.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/SparkSQLRegistration.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/SparkSQLRegistration.scala" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -68,6 +90,14 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitSEFilterConfiguration">
+    <file-type-list>
+      <filtered-out-file-type name="LOCAL_BRANCH" />
+      <filtered-out-file-type name="REMOTE_BRANCH" />
+      <filtered-out-file-type name="TAG" />
+      <filtered-out-file-type name="COMMIT_BY_MESSAGE" />
+    </file-type-list>
+  </component>
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
   </component>
@@ -85,6 +115,9 @@
     <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="last_opened_file_path" value="$PROJECT_DIR$" />
+    <property name="project.structure.last.edited" value="Libraries" />
+    <property name="project.structure.proportion" value="0.0" />
+    <property name="project.structure.side.proportion" value="0.39655173" />
     <property name="settings.editor.selected.configurable" value="editor.preferences.fonts.default" />
   </component>
   <component name="RunManager">
@@ -149,42 +182,35 @@
     <breakpoint-manager>
       <breakpoints>
         <line-breakpoint enabled="true" type="scala-line">
-          <url>file://$PROJECT_DIR$/src/main/scala/FilterProcessor.scala</url>
-          <line>207</line>
-          <option name="timeStamp" value="154" />
+          <url>jar://$USER_HOME$/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/apache/spark/spark-catalyst_2.12/3.1.2/spark-catalyst_2.12-3.1.2-sources.jar!/org/apache/spark/sql/Row.scala</url>
+          <line>252</line>
+          <option name="timeStamp" value="173" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="scala-line">
-          <url>file://$PROJECT_DIR$/src/main/scala/JsonScanBuilder.scala</url>
-          <line>53</line>
-          <option name="timeStamp" value="162" />
+          <url>jar://$USER_HOME$/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/apache/spark/spark-catalyst_2.12/3.1.2/spark-catalyst_2.12-3.1.2-sources.jar!/org/apache/spark/sql/Row.scala</url>
+          <line>522</line>
+          <option name="timeStamp" value="174" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="scala-line">
+          <url>jar://$USER_HOME$/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/apache/spark/spark-catalyst_2.12/3.1.2/spark-catalyst_2.12-3.1.2-sources.jar!/org/apache/spark/sql/catalyst/expressions/rows.scala</url>
+          <line>43</line>
+          <option name="timeStamp" value="216" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="scala-line">
+          <condition expression="key.equals(&quot;geometry&quot;)" language="Scala" />
           <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
-          <line>1397</line>
-          <option name="timeStamp" value="191" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" type="scala-line">
-          <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
-          <line>1393</line>
-          <option name="timeStamp" value="193" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" type="scala-line">
-          <url>file://$PROJECT_DIR$/src/main/scala/PathProcessor.scala</url>
-          <line>143</line>
-          <option name="timeStamp" value="197" />
+          <line>1266</line>
+          <option name="timeStamp" value="495" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
     <pin-to-top-manager>
       <pinned-members>
-        <PinnedItemInfo parentTag="scala.Tuple2" memberName="_2" />
+        <PinnedItemInfo parentTag="scala.Tuple2" memberName="_1" />
+        <PinnedItemInfo parentTag="edu.ucr.cs.bdlab.ProjectionNode" memberName="childrenTree" />
         <PinnedItemInfo parentTag="edu.ucr.cs.bdlab.Variable" memberName="parents" />
+        <PinnedItemInfo parentTag="edu.ucr.cs.bdlab.ProjectionNode" memberName="filterVariables" />
       </pinned-members>
     </pin-to-top-manager>
-    <watches-manager>
-      <configuration name="Remote">
-        <watch expression="x" />
-      </configuration>
-    </watches-manager>
   </component>
 </project>

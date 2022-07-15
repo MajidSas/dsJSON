@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 University of California, Riverside
+ * Copyright ...
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,19 +41,37 @@ class JsonSource extends TableProvider with DataSourceRegister {
     println("schemaBuilder: " + jsonOptions.schemaBuilder)
     var schema : StructType = null
     if (jsonOptions.schemaBuilder.equals("fullPass")) {
-      println("Creating partitions with a full pass ...")
-      jsonOptions.partitions = Partitioning.fullPass(jsonOptions)
-      println("Inferring schema using whole data...")
+
+      if(jsonOptions.partitioningStrategy.equals("speculation")) {
+        println("[PROGRESS] Collecting keys for speculation ...")
+        SchemaInference.inferUsingStart(jsonOptions) // only apply for key-collection
+        jsonOptions.partitions =
+          Partitioning.getFilePartitions(jsonOptions.filePaths, jsonOptions).toArray
+        println("[PROGRESS] Creating partitions with speculation ...")
+        jsonOptions.partitions = Partitioning.speculation(jsonOptions)
+
+      } else {
+        println("[PROGRESS] Creating partitions with a full pass ...")
+        jsonOptions.partitions = Partitioning.fullPass(jsonOptions)
+      }
+
+      println("[PROGRESS] Inferring schema using whole data...")
       schema = SchemaInference.fullInference(jsonOptions)
     } else {
-      println("Inferring schema using start of file...")
       val t0 = System.nanoTime()
-      jsonOptions.partitions =
-        Partitioning.getFilePartitions(jsonOptions.filePaths, jsonOptions).toArray
+      if(jsonOptions.partitioningStrategy.equals("fullPass")) {
+        println("[PROGRESS] Creating partitions with a full pass ...")
+        jsonOptions.partitions = Partitioning.fullPass(jsonOptions)
+      } else {
+        jsonOptions.partitions =
+          Partitioning.getFilePartitions(jsonOptions.filePaths, jsonOptions).toArray
+      }
+      println("[PROGRESS] Schema inference using start of file ...")
       schema = SchemaInference.inferUsingStart(jsonOptions)
       val t1 = System.nanoTime()
       System.err.println("Job -1 finished: collect at SchemaInference.scala:352, took " + (t1-t0)*scala.math.pow(10,-9) + " s")
     }
+    System.out.println("Schema size: " + schema.defaultSize)
     if(jsonOptions.extraFields) {
       schema = schema.add(StructField("extra_fields", StringType, true))
     }
