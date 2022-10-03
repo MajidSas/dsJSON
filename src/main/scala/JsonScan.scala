@@ -28,7 +28,7 @@ class JsonScan(val schema : StructType, val options :  JsonOptions) extends Scan
     }
 
     override def description(): String = {
-        "JSONDSP"
+        "dsJSON"
     }
 
     

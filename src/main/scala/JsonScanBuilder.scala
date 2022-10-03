@@ -47,7 +47,7 @@ class JsonScanBuilder(val schema : StructType, val options :  JsonOptions) exten
     } else {
       return null
     }
-    println(rowMap)
+//    println(rowMap)
     return rowMap
   }
     override def build(): Scan = {
@@ -76,9 +76,9 @@ class JsonScanBuilder(val schema : StructType, val options :  JsonOptions) exten
 
 
 
-      println(_requiredSchema)
-        println(options.rowMap)
-        println(filterString)
+//      println(_requiredSchema)
+//        println(options.rowMap)
+//        println(filterString)
         return new JsonScan(_requiredSchema, options)
     }
 
@@ -87,7 +87,7 @@ class JsonScanBuilder(val schema : StructType, val options :  JsonOptions) exten
     
     if (SparkSession.builder.getOrCreate().sessionState.conf.jsonFilterPushDown) {
       _pushedFilters = StructFilters.pushedFilters(filters, schema)
-      _pushedFilters.map(f => println(f.toString))
+//      _pushedFilters.map(f => println(f.toString))
     }
     filters
   }

@@ -121,7 +121,7 @@ object SchemaInference {
     } else if ((t1 == DoubleType && t2 == LongType) || (t1 == LongType && t2 == DoubleType)) {
       return DoubleType
     } else {
-      println("WARNING: conflicting data types will be parsed as strings (" + t1.toString + "," + t2.toString + ")")
+//      println("WARNING: conflicting data types will be parsed as strings (" + t1.toString + "," + t2.toString + ")")
       return StringType
     }
   }

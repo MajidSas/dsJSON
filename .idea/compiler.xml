@@ -2,6 +2,7 @@
 <project version="4">
   <component name="CompilerConfiguration">
     <bytecodeTargetLevel>
+      <module name="Documents.dsJSON" target="1.8" />
       <module name="dsJSON" target="1.8" />
       <module name="jsondsp" target="1.8" />
     </bytecodeTargetLevel>

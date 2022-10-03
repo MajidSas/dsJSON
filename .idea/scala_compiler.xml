@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ScalaCompilerConfiguration">
     <profile name="sbt 1" modules="jsondsp-paper-code_7602" />
-    <profile name="sbt 2" modules="dsJSON,jsondsp">
+    <profile name="sbt 2" modules="Documents.dsJSON,dsJSON,jsondsp">
       <option name="deprecationWarnings" value="true" />
       <option name="uncheckedWarnings" value="true" />
     </profile>

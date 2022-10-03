@@ -16,7 +16,8 @@
 
 package edu.ucr.cs.bdlab
 
-import org.apache.hadoop.fs.{FileSystem, GlobFilter, Path, PathFilter}
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs._
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.types._
@@ -170,12 +171,11 @@ def speculate(
   val parser = new Parser(partition.path, partition.hdfsPath, options.encoding, pos=partition.start, end=partition.end)
   val pda = options.getPDA()
   val maxQueryLevel = pda.states.length
-
+  var token = ""
   // shift the start index and determine label and level
   var partitionLabel = ""
   var shiftedEndIndex = start
   if (start > 0) {
-    var token = ""
     var partitionLevel = maxQueryLevel
     var partitionState = 0
     partitionLabel = ""
@@ -229,7 +229,8 @@ def speculate(
     startLevel,
     startState,
     partitionStateLevels,
-    partitionInitialState
+    partitionInitialState,
+    speculationAttribute = token
   )
 }
   def speculation(options: JsonOptions): Array[InputPartition] = {
@@ -281,6 +282,16 @@ def speculate(
     var i = z.length - 1
     var prevStart = z(i).end
     var prevPath = ""
+
+    val conf = if (options.hdfsPath == "local") {
+      new Configuration()
+    } else {
+      val _conf = new Configuration()
+      _conf.set("fs.defaultFS", options.hdfsPath)
+      _conf
+    }
+    val fs = FileSystem.get(conf)
+
     while (i >= 0) {
       val partition = z(i).asInstanceOf[JsonInputPartition]
       val end = if (partition.path.equals(prevPath)) { prevStart }
@@ -295,9 +306,15 @@ def speculate(
           partition.dfaState,
           partition.stateLevels,
           partition.initialState,
-          id=i
+          id=i,
+          speculationAttribute=partition.speculationAttribute
         )
       )
+
+
+      val path = new Path("./dsJSON_tmp/"+i+"_partition_boundaries.txt")
+      fs.deleteOnExit(path)
+
       prevStart = partition.start
       prevPath = partition.path
       i -= 1
@@ -485,25 +502,29 @@ def speculate(
 //    val controlChars = HashSet[Byte](OBJECT_START, OBJECT_END, ARRAY_START, ARRAY_END, QUOTE)
 
     if(partition.start > 0) {
-      val _token = parser.consume(
-        '"'
-      )
-      val isValidString = parser.isValidString(
-        _token
-          .substring(1, _token.size - 1)
-      )
+      val (_, tokenStartPos) = parser.getNextToken
+      parser.pos = partition.start
+      parser.repositionReader(partition.start)
+      val reader = parser.reader
+      var countQuotes = 0
+      var i : Int = 0
+      var firstQuotePos = partition.start
+      while(i < tokenStartPos) {
+        val c = reader.read()
+        i += parser.charSize(c)
+//        println(c.toChar + ", " + i + ", " + countQuotes)
+        if(c.toChar == '"') {
+          countQuotes += 1
+          if(countQuotes == 1) {
+            firstQuotePos += i
+          }
+        }
+      }
 
-      
-
-      if (isValidString) { // skip it
-        pos = parser.pos
-      } else {
-        // TODO: if not valid string search for token and adjust positions
-        // Parser.getNextToken (returns the position as well)
-        // use that position to determine the correct classification 
-        // if start is string or not
-        // reset reader to reconsider json characters
-        parser.repositionReader(pos)
+      if(countQuotes % 2 == 0) { // start not string
+        pos = partition.start
+      } else { // start is in string
+        pos = firstQuotePos // skip first quote
       }
     }
 
@@ -533,7 +554,7 @@ def speculate(
             stackPos -= 1
           } else {
             append = true
-            appendValue = OBJECT_START
+            appendValue = OBJECT_END
           }
         } else { // empty
           append = true
@@ -595,7 +616,6 @@ def speculate(
           pos = skip(byteStream, pos, partition.end, QUOTE)
         }
       }
-
     }
 
     val finalSyntaxStack = new ArrayBuffer[String]()
@@ -624,9 +644,9 @@ def speculate(
 
     byteStream.close()
 
-    println("######### getEndState ############")
-    println(finalSyntaxStack)
-    println(finalPosStack)
+//    println("######### getEndState ############")
+//    println(finalSyntaxStack)
+//    println(finalPosStack)
 
     parser.close()
 
@@ -672,7 +692,7 @@ def speculate(
         response = pda.checkToken(elem, level)
       }
 
-      if (response.equals("accept") || response.equals("reject")) {
+      if (response.equals("accept") || response.equals("reject") || pda.checkArray()) {
         isComplete = true
       }
       i += 1
@@ -739,10 +759,10 @@ def speculate(
       val (level, skipLevels, dfaState, stateLevels) =
         partitionLevelSkipping(prevStack.toArray, options)
 
-      // println("####### " + i + " Start: " + start + " End: " + end)
-      // println("Start state: " + prevStack)
-      // println("End state: " + syntaxStack)
-      // println(level + " " + skipLevels + " " + dfaState + " " + isString)
+//       println("####### " + i + " Start: " + start + " End: " + end)
+//       println("Start state: " + prevStack)
+//       println("End state: " + syntaxStack)
+//       println(level + " " + skipLevels + " " + dfaState + " " + isString)
       if (prevPath != path) {
         prevStack = new ArrayBuffer[String]()
         prevIsString = false
@@ -856,4 +876,36 @@ def speculate(
 
   }
 
+  def verify(hdfsPath: String): Unit = {
+    val conf = if (hdfsPath == "local") {
+      new Configuration()
+    } else {
+      val _conf = new Configuration()
+      _conf.set("fs.defaultFS", hdfsPath)
+      _conf
+    }
+    val fs = FileSystem.get(conf)
+    var map = HashMap[Int, Array[String]]()
+    var path = new Path("./dsJSON_tmp/0_partition_boundaries.txt")
+    var id = 0
+    while(fs.exists(path)) {
+      def readLines = scala.io.Source.fromInputStream(fs.open(path))
+      val o : Array[String] = readLines.takeWhile(_ != null).mkString("").split("\n")
+      map = map + ((id, o))
+      id += 1
+      path = new Path("./dsJSON_tmp/"+id+"_partition_boundaries.txt");
+    }
+
+    println("Verifying speculative partitioning...")
+//    println(map)
+    for(i <- 1 until id) {
+      if(map(i)(0) != map(i-1)(1)) {
+        throw new Exception("Invalid initialization at partition " + i +
+          " was detected. The partition was initialized with state: \"" + map(i)(0) +
+        "\", but the correct state is: \"" + map(i-1)(1) + "\". The attribute \"" +
+        map(i)(2) + "\" was used for speculation.")
+      }
+    }
+    println("Speculation verified successfully.")
+  }
 }

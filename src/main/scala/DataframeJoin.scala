@@ -45,7 +45,7 @@ object DataframeJoin {
       "hdfs://ec-hn.cs.ucr.edu:8040/"
     )
 
-    df_osm.printSchema()
+//    df_osm.printSchema()
     df_osm.createOrReplaceTempView("osm")
 
 //    df_osm.write.mode("overwrite").parquet("./datasets/joined_df.parquet")
@@ -65,7 +65,7 @@ object DataframeJoin {
       "hdfs://ec-hn.cs.ucr.edu:8040/"
     )
 
-    df_wiki.printSchema()
+//    df_wiki.printSchema()
     df_wiki.createOrReplaceTempView("wiki")
 
     val joined_dfs = spark.sql("SELECT * FROM osm o, wiki w " +

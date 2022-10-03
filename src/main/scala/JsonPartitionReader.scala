@@ -16,6 +16,8 @@
 
 package edu.ucr.cs.bdlab
 
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FSDataOutputStream, FileSystem, Path}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.catalyst.util._
@@ -46,7 +48,6 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
     this.inputPartition = inputPartition
     this.schema = schema
     this.options = options
-
     this.parser = new Parser(
       inputPartition.path,
       options.hdfsPath,
@@ -89,12 +90,12 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
 //    val (_stream, _fileSize) = Parser.getInputStream(filePath, options.hdfsPath)
 //    stream = _stream
 //    fileSize = _fileSize
-    println(
-      inputPartition.start,
-      inputPartition.end,
-      inputPartition.startLevel,
-      inputPartition.dfaState
-    )
+//    println(
+//      inputPartition.start,
+//      inputPartition.end,
+//      inputPartition.startLevel,
+//      inputPartition.dfaState
+//    )
 //    println("Filters: "+options.filterString)
 //    val (_, _filterVariables, _filterSize) : (Any, HashMap[String, Variable], Int) =  FilterProcessor.parseExpr(options.filterString, options.rowMap)
 //    filterVariables = _filterVariables
@@ -107,8 +108,8 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
     parser.initSyntaxStack(initialState)
     parser.pda.setState(inputPartition.dfaState)
     parser.pda.setLevels(inputPartition.stateLevels)
-    println(parser.syntaxStackArray)
-    println(parser.pda)
+//    println(parser.syntaxStackArray)
+//    println(parser.pda)
   }
 
   def rowMapToProjection(projectionNode : ProjectionNode): Unit = {
@@ -135,6 +136,29 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
     //     println(hasNext + " start: " + start + " pos: " + pos + " end: " + end + " count: " + count)
     // }
     value = _value
+    if(!hasNext && options.partitioningStrategy.equals("speculation")) {
+      val conf = if (options.hdfsPath == "local") {
+        new Configuration()
+      } else {
+        val _conf = new Configuration()
+        _conf.set("fs.defaultFS", options.hdfsPath)
+        _conf
+      }
+      val fs = FileSystem.get(conf)
+      val path = new Path("./dsJSON_tmp/"+inputPartition.id+"_partition_boundaries.txt")
+      val outputStream: FSDataOutputStream = fs.create(path, true)
+      var s = inputPartition.dfaState.toString
+      for(c <- inputPartition.initialState) {
+        s += c.toString
+      }
+      s+= "\n" + parser.pda.currentState.toString
+      for(c <- parser.syntaxStackArray) {
+        s += c.toString
+      }
+      s+="\n" + inputPartition.speculationAttribute
+      outputStream.writeBytes(s)
+      outputStream.close()
+    }
     hasNext
   }
 

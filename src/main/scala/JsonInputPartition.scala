@@ -20,7 +20,7 @@ import org.apache.spark.sql.connector.read.{InputPartition}
 import org.apache.spark.SparkContext
 import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.fs.Path
-class JsonInputPartition(val path : String, val hdfsPath : String, val start : Long, val end : Long, val startLevel : Int, val dfaState : Int, val stateLevels : List[Int], val initialState : List[Char] = null, val id : Int = 0) extends InputPartition {
+class JsonInputPartition(val path : String, val hdfsPath : String, val start : Long, val end : Long, val startLevel : Int, val dfaState : Int, val stateLevels : List[Int], val initialState : List[Char] = null, val id : Int = 0, val speculationAttribute:String="") extends InputPartition {
 
     // TODO: also add initial path (might be required in some cases for initialization [e.g. with multiple dscendent types])
     override def preferredLocations() : Array[String] = {

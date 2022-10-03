@@ -14,7 +14,7 @@ First, make sure the classes are importable by linking the JAR file.
 val spark =
       SparkSession.builder().appName("spark-json-reader").getOrCreate()
 val df = spark.read
-      .format("edu.ucr.cs.bdlab.JsonSource") // name of the class or "jsondsp" if the class is registerd
+      .format("edu.ucr.cs.bdlab.JsonSource") // name of the class or "dsJSON" if the class is registerd
       .option("jsonPath", jsonPath)
       .option("partitioningStrategy", "speculation") // or "fullPass"
       .option("schemaBuilder", "speculation") // or "fullPass" in the paper (it is optimistic vs. pessimistic, will be udpated here)
@@ -42,9 +42,3 @@ Refer to: `build.sbt` for all dependencies.
 * `JsonPartitionReader.scala`: the initialization starts by shifting the start and end index for the case of speculative partitioning. Then, it initializes the syntax stack (corresponding to the depth in the file), and also sets the state of the DFA.
 * `Parser.scala`: contains all the functions used for parsing and working with input files.
 * `FilterProcessor.scala`: contains all the classes and predicates for buliding the expression tree and evaluating ghe filters.
-
-# Remaining components:
-* Refer to the TODO comments in the code.
-* There will a detailed project plan for implementing/fixing all of these components.
-* Refer to the paper for details on how it works:
-[PAPER LINK HERE]

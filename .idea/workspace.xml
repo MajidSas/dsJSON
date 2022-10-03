@@ -29,33 +29,21 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="dad330fe-0e37-4c65-b4d0-44e5f4a2bf92" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/src/main/scala/DataframeJoin.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/.name" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/compiler.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/compiler.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules/jsondsp-build.iml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules/jsondsp.iml" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/scala_compiler.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/scala_compiler.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/FilterProcessor.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/FilterProcessor.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/GeometryUDT.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/GeometryUDT.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonBatch.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonBatch.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/DataframeJoin.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/DataframeJoin.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/JsonInputPartition.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonInputPartition.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonOptions.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonOptions.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/JsonPartitionReader.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonPartitionReader.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonPartitionReaderFactory.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonPartitionReaderFactory.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/JsonScan.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonScan.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/JsonScanBuilder.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonScanBuilder.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/JsonSource.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonSource.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/JsonTable.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonTable.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/Main.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Main.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/PDA.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/PDA.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/Parser.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Parser.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/Partitioning.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Partitioning.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/PathProcessor.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/PathProcessor.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/ProjectionNode.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/ProjectionNode.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/SchemaInference.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/SchemaInference.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/SparkSQLRegistration.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/SparkSQLRegistration.scala" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -202,10 +190,16 @@
           <line>1266</line>
           <option name="timeStamp" value="495" />
         </line-breakpoint>
+        <line-breakpoint enabled="true" type="scala-line">
+          <url>file://$PROJECT_DIR$/src/main/scala/Partitioning.scala</url>
+          <line>671</line>
+          <option name="timeStamp" value="524" />
+        </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
     <pin-to-top-manager>
       <pinned-members>
+        <PinnedItemInfo parentTag="scala.collection.mutable.ArrayBuffer" memberName="array" />
         <PinnedItemInfo parentTag="scala.Tuple2" memberName="_1" />
         <PinnedItemInfo parentTag="edu.ucr.cs.bdlab.ProjectionNode" memberName="childrenTree" />
         <PinnedItemInfo parentTag="edu.ucr.cs.bdlab.Variable" memberName="parents" />

@@ -27,7 +27,7 @@ import java.{util => ju}
 class JsonSource extends TableProvider with DataSourceRegister {
   var jsonOptions: JsonOptions = null
 
-  override def shortName(): String = "jsondsp"
+  override def shortName(): String = "dsJSON"
   override def inferSchema(options: CaseInsensitiveStringMap): StructType = {
     if (options != null) {
       jsonOptions = new JsonOptions()
@@ -38,7 +38,7 @@ class JsonSource extends TableProvider with DataSourceRegister {
 
     // TODO: update if statements to handle all possible four choice
     // we only considered two scenarios, but it should work for any choices 
-    println("schemaBuilder: " + jsonOptions.schemaBuilder)
+//    println("schemaBuilder: " + jsonOptions.schemaBuilder)
     var schema : StructType = null
     if (jsonOptions.schemaBuilder.equals("fullPass")) {
 

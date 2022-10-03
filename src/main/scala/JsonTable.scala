@@ -66,7 +66,7 @@ class JsonTable(val _schema: StructType, val jsonOptions: JsonOptions)
   }
 
   override def name(): String = {
-    "JSONDSP"
+    "dsJSON"
   }
 
   override def schema(): StructType = {

@@ -44,7 +44,7 @@ object Main {
       hdfsPath,
     )
 
-    df.printSchema()
+//    df.printSchema()
 
     df.createOrReplaceTempView("table")
     val sqlDF = spark.sql("SELECT *  FROM table WHERE " + sqlFilter)
@@ -58,7 +58,14 @@ object Main {
       )
 //      println(sqlDF.take(2).toString)
     } else {
-      sqlDF.take(10).foreach(row => {println(row.toString())})
+      sqlDF.foreach(row => {})
+    }
+
+    if(partitioningStrategy.equals("speculation")) {
+      val t0 = System.nanoTime()
+      Partitioning.verify(hdfsPath)
+      val t1 = System.nanoTime()
+      System.err.println("Job -1 finished: collect at Verification.scala:68, took " + (t1-t0)*scala.math.pow(10,-9) + " s")
     }
   }
 }
@@ -87,7 +94,7 @@ object JsonStream {
       .option("jsonPath", jsonPath)
       .option("pathGlobFilter", pathGlobFilter)
       .option("recursiveFileLookup", recursive.toString())
-      .option("partitioningStrategy", "speculation") // TODO: fix option
+      .option("partitioningStrategy", partitioningStrategy) // TODO: fix option
       .option("schemaBuilder", schemaBuilder)
       .option("extraFields", extraFields.toString())
       .option("keepIndex", keepIndex.toString())
