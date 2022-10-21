@@ -39,6 +39,7 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
   var key: String = ""
   var value: Any = _
   var projection : ProjectionNode = _
+  var parserMaxMemSize = 0L
 
   def this(
       inputPartition: JsonInputPartition,
@@ -145,20 +146,35 @@ class JsonPartitionReader extends PartitionReader[InternalRow] {
         _conf
       }
       val fs = FileSystem.get(conf)
-      val path = new Path("./dsJSON_tmp/"+inputPartition.id+"_partition_boundaries.txt")
+      var path = new Path("./dsJSON_tmp/"+inputPartition.id+"_partition_boundaries.txt")
       val outputStream: FSDataOutputStream = fs.create(path, true)
       var s = inputPartition.dfaState.toString
       for(c <- inputPartition.initialState) {
         s += c.toString
       }
       s+= "\n" + parser.pda.currentState.toString
-      for(c <- parser.syntaxStackArray) {
+      for(c <- parser.syntaxStackArray.take(parser.stackPos+1)) {
         s += c.toString
       }
       s+="\n" + inputPartition.speculationAttribute
       outputStream.writeBytes(s)
       outputStream.close()
+
+//      var totalMem : Long = parserMaxMemSize;
+//      totalMem += SizeEstimator.estimate(inputPartition)
+//      totalMem += SizeEstimator.estimate(schema)
+//      totalMem += SizeEstimator.estimate(options)
+//      totalMem += SizeEstimator.estimate(projection)
+//
+//      path = new Path("./dsJSON_tmp/"+inputPartition.id+"_memory.txt")
+//      val outputStream2: FSDataOutputStream = fs.create(path, true)
+//      println("TOTAL MEM: " + totalMem.toString)
+//      outputStream2.writeBytes(totalMem.toString)
+//      outputStream2.close()
+      return hasNext
     }
+//    this.parserMaxMemSize =  Math.max(parserMaxMemSize, SizeEstimator.estimate(cmake -DCMAKE_BUILD_TYPE=Release ..))
+
     hasNext
   }
 

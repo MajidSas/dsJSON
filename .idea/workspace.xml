@@ -29,19 +29,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="dad330fe-0e37-4c65-b4d0-44e5f4a2bf92" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/compiler.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/compiler.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/scala_compiler.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/scala_compiler.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/DataframeJoin.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/DataframeJoin.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonInputPartition.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonInputPartition.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/JsonPartitionReader.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonPartitionReader.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonScan.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonScan.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonScanBuilder.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonScanBuilder.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonSource.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonSource.scala" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/scala/JsonTable.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/JsonTable.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/Main.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Main.scala" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/scala/Parser.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Parser.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/Partitioning.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/Partitioning.scala" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/scala/SchemaInference.scala" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/scala/SchemaInference.scala" afterDir="false" />
     </list>
@@ -85,6 +76,31 @@
       <filtered-out-file-type name="TAG" />
       <filtered-out-file-type name="COMMIT_BY_MESSAGE" />
     </file-type-list>
+  </component>
+  <component name="GitToolBoxStore">
+    <option name="recentBranches">
+      <RecentBranches>
+        <option name="branchesForRepo">
+          <list>
+            <RecentBranchesForRepo>
+              <option name="branches">
+                <list>
+                  <RecentBranch>
+                    <option name="branchName" value="memmeasure" />
+                    <option name="lastUsedInstant" value="1664829576" />
+                  </RecentBranch>
+                  <RecentBranch>
+                    <option name="branchName" value="master" />
+                    <option name="lastUsedInstant" value="1664829575" />
+                  </RecentBranch>
+                </list>
+              </option>
+              <option name="repositoryRootUrl" value="file://$PROJECT_DIR$" />
+            </RecentBranchesForRepo>
+          </list>
+        </option>
+      </RecentBranches>
+    </option>
   </component>
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
@@ -185,15 +201,44 @@
           <option name="timeStamp" value="216" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="scala-line">
-          <condition expression="key.equals(&quot;geometry&quot;)" language="Scala" />
           <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
-          <line>1266</line>
-          <option name="timeStamp" value="495" />
+          <line>1498</line>
+          <option name="timeStamp" value="546" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="scala-line">
+          <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
+          <line>1645</line>
+          <option name="timeStamp" value="549" />
         </line-breakpoint>
         <line-breakpoint enabled="true" type="scala-line">
           <url>file://$PROJECT_DIR$/src/main/scala/Partitioning.scala</url>
-          <line>671</line>
-          <option name="timeStamp" value="524" />
+          <line>324</line>
+          <option name="timeStamp" value="553" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="scala-line">
+          <url>file://$PROJECT_DIR$/src/main/scala/SchemaInference.scala</url>
+          <line>104</line>
+          <option name="timeStamp" value="565" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="scala-line">
+          <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
+          <line>430</line>
+          <option name="timeStamp" value="579" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="scala-line">
+          <url>file://$PROJECT_DIR$/src/main/scala/JsonPartitionReader.scala</url>
+          <line>110</line>
+          <option name="timeStamp" value="587" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="scala-line">
+          <url>file://$PROJECT_DIR$/src/main/scala/Parser.scala</url>
+          <line>390</line>
+          <option name="timeStamp" value="588" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="scala-line">
+          <url>file://$PROJECT_DIR$/src/main/scala/JsonPartitionReader.scala</url>
+          <line>128</line>
+          <option name="timeStamp" value="589" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

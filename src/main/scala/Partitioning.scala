@@ -185,7 +185,7 @@ def speculate(
       parser.repositionReader(shiftedEndIndex)
       val (tmpToken, index) = parser.getNextToken
       if (
-        (speculationKeys contains tmpToken)
+        speculationKeys.contains(tmpToken)
       ) {
         foundToken = true
         token = tmpToken
@@ -197,6 +197,8 @@ def speculate(
         if (partitionLevel > partitionInitialState.length) {
           if(pda.states(0).stateType.equals("array")) {partitionLevel-=1}
           shiftedEndIndex = shiftedEndIndex + parser.skipLevels(partitionLevel - partitionState) + 2
+          // FIXME: possible bug; make sure it doesn't result in the start position being at a character
+          // this may cause an error for some queries in some specific circumstances
           partitionLevel = partitionState
           skippedLevels = true
         }
@@ -313,14 +315,16 @@ def speculate(
 
 
       val path = new Path("./dsJSON_tmp/"+i+"_partition_boundaries.txt")
-      fs.deleteOnExit(path)
+      if(fs.exists(path)) {
+        fs.delete(path, false)
+      }
 
       prevStart = partition.start
       prevPath = partition.path
       i -= 1
     }
 
-    q.toArray.reverse
+     q.toArray.reverse
   }
 
   def mergeSyntaxStack(

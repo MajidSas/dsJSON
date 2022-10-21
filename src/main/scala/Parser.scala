@@ -57,7 +57,9 @@ class Parser(val filePath: String = "",
   def getInputStream: (FSDataInputStream, Long) = {
     if (filePath == "") return (null, -1)
     val conf = if (hdfsPath == "local") {
-      new Configuration()
+      val _conf = new Configuration()
+      _conf.set("fs.defaultFS", "file:///")
+      _conf
     } else {
       val _conf = new Configuration()
       _conf.set("fs.defaultFS", hdfsPath)
@@ -378,13 +380,16 @@ class Parser(val filePath: String = "",
           return (true, finalizeValue(record, partitionId, projection.rowMap), encounteredTokens)
         }
       }
-      if (pos + 1 >= end) {
+      if (pos >= end) {
         return (false, null, encounteredTokens)
       }
 
       val i = reader.read()
       val c = i.toChar;
       pos += charSize(i)
+      if(pos-10 == end || pos >= 84688847L) {
+        print("")
+      }
       if (isWhiteSpace(c) || c == ':') {
         // SKIP
       } else if (
@@ -640,7 +645,10 @@ class Parser(val filePath: String = "",
     var prevC = '"'
     var countEscape = 0
     var c = '"'
+    var readerMarked = false;
     if (currentChar == '\u0000' || currentChar == ',') {
+      reader.mark(1);
+      readerMarked = true;
       val i = reader.read()
       if (i == -1) {
         return
@@ -652,8 +660,10 @@ class Parser(val filePath: String = "",
     }
     while (true) {
       if (stackPos + 1 == 0 && (c == ',' || c == ']' || c == '}')) {
-        reader.reset()
-        pos -= charSize(c.toChar)
+        if(readerMarked) {
+          reader.reset()
+          pos -= charSize(c.toChar)
+        }
         return;
       } else if (
         !isString &&
@@ -699,6 +709,7 @@ class Parser(val filePath: String = "",
         return
       }
       reader.mark(1);
+      readerMarked = true
       val i = reader.read()
 
       if (i == -1) {
@@ -1140,10 +1151,6 @@ class Parser(val filePath: String = "",
     } else {
       c = currentChar;
     }
-    if (projection.isOutputNode && !projection.hasFilter && projection.outputsRowMap.isEmpty) {
-      skip(c)
-      parsedRecords.enqueue(InternalRow.empty)
-    }
     val (_, dataType, subType): (_, DataType, Any) = if (projection.outputsRowMap.contains(key)) {
       projection.outputsRowMap(key)
     } else {
@@ -1152,7 +1159,12 @@ class Parser(val filePath: String = "",
     while (true) {
       c match {
         case '{' => {
-          parseObject("*", projection)
+          if(projection.isOutputNode && !projection.hasFilter && projection.outputsRowMap.isEmpty) {
+            skip(c)
+            parsedRecords.enqueue(InternalRow.empty)
+          } else{
+            parseObject("*", projection)
+          }
           return
         }
         case '[' => {

@@ -15,9 +15,12 @@
  */
 
 package edu.ucr.cs.bdlab
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs._
 import org.apache.spark.beast.SparkSQLRegistration
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, SparkSession}
+
 
 object Main {
   def main(args: Array[String]): Unit = {
@@ -67,6 +70,33 @@ object Main {
       val t1 = System.nanoTime()
       System.err.println("Job -1 finished: collect at Verification.scala:68, took " + (t1-t0)*scala.math.pow(10,-9) + " s")
     }
+
+//    var totalMemory = SizeEstimator.estimate(sqlDF);
+//    println("sqlDF memory size: " + totalMemory)
+//
+    val conf = if (hdfsPath == "local") {
+      new Configuration()
+    } else {
+      val _conf = new Configuration()
+      _conf.set("fs.defaultFS", hdfsPath)
+      _conf
+    }
+    val fs = FileSystem.get(conf)
+//    var path = new Path("./dsJSON_tmp/0_memory.txt")
+//    var id = 0
+//    while(fs.exists(path)) {
+//      def readLines = scala.io.Source.fromInputStream(fs.open(path))
+//      val size = readLines.takeWhile(_ != null).mkString("")
+////      println("PARTITION " + id + ": " + size)
+//      totalMemory += size.toLong
+//      path = new Path("./dsJSON_tmp/"+id+"_memory.txt");
+//      id+=1;
+//    }
+//
+//    println("Total memory used by parser by all partitions " + id + ": " + totalMemory)
+
+    val p = new Path("./dsJSON_tmp/")
+    fs.delete(p, true)
   }
 }
 

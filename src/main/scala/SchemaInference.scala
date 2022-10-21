@@ -55,12 +55,17 @@ object SchemaInference {
         detectGeometry
       )
     } else {
-      val (subT, _subT2) = t.asInstanceOf[(DataType, Any)]
-      if (subT.isInstanceOf[ArrayType]) {
-        return ArrayType(getArrayType(_subT2))
+      if(t.isInstanceOf[(DataType, Any)]) {
+        val (subT, _subT2) = t.asInstanceOf[(DataType, Any)]
+        if (subT.isInstanceOf[ArrayType]) {
+          return ArrayType(getArrayType(_subT2, nullToString, detectGeometry))
+        } else {
+          return if (nullToString && subT.isInstanceOf[NullType]) { StringType }
+          else { subT }
+        }
       } else {
-        return if (nullToString && subT.isInstanceOf[NullType]) { StringType }
-        else { subT }
+        if (nullToString && t.isInstanceOf[NullType]) { StringType }
+        else { t.asInstanceOf[DataType] }
       }
     }
   }
