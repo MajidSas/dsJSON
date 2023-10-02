@@ -1,5 +1,11 @@
 # Datasets
 
+## Download folder
+You can download all of these datasets here:
+
+https://drive.google.com/drive/folders/1aQURK9Vg1lMLx_drDIyWLIWm6kueHbpY
+
+
 ## BestBuy
 https://drive.google.com/file/d/1dsv0r5WFFXveg1ENaO0s7o-kk41uPMKE/view?usp=sharing
 
@@ -25,3 +31,4 @@ https://star.cs.ucr.edu/?osm21/all_nodes
 
 The file that we used totals 2TB when decompressed, and it includes all geometry types (it combines all the files under OSM21 in the url).
 We can provide S3 links for fast download if the whole data is needed.
+

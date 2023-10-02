@@ -2,9 +2,10 @@
 **/*.json
 **/.DS_Store
 
+.idea
 .bloop/
 .metals/
-.idea/
+.idea/*
 .bsp/
 .scalafmt.conf
 2
