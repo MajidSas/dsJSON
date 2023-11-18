@@ -80,3 +80,19 @@ The file `output_extractor.py` extracts the required values from each log file p
 
 The files `bestbuy-duplicate.py` and `bestbuy_converter.py` are used for pre-processing the BestBuy dataset depending on the experiment needs.
 
+# Simple experiment
+
+The folder `simple_exp` contains a script to run a simple experiment that scales the data, and measure the conversion time to JSONLines format, and then measures the processing time.
+
+To run this experiment, do the following steps:
+1. download the file `bestbuy_large_record.json.bz2`
+2. decompress the file and copy it to `./simple_exp/datasets`
+3. copy the compiled file `dsJSON-assembly-0.1.jar` to `./simple_exp`
+4. compile the baselines using `sbt assembly`
+5. the first baseline is in `./other_code/sparkJsonLineReader`. The JAR file will be named `spark_jsonline.jar` after running `sbt assembly`
+6. the second baseline is in `./other_code/spark+jayway`, with the package called `spark_jayway.jar`.
+7. copy those jar files to `./simple_exp`
+8. In `./simple_exp/run_experiment.py` modify the `master` and `hdfs` based on your environment.
+9. Run the experiment using `python run_experiment.py` insde the `simple_exp` folder.
+
+Note the effect of this experiment is only observed for large enough data sizes and enough parallelism.

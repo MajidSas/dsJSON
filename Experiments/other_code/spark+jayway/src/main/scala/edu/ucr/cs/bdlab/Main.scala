@@ -1,4 +1,4 @@
-package edu.ucr.cs.bdlab.sparkjsonreader
+package edu.ucr.cs.bdlab
 
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.{SparkSession}

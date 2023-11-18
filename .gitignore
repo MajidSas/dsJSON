@@ -9,6 +9,5 @@
 .bsp/
 .scalafmt.conf
 2
-project
 target
 *.geojson
