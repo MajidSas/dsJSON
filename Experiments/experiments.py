@@ -11,21 +11,21 @@ def execute_cmd(command, output_file):
     with open(output_file + "stderr.txt", "w") as text_file:
         text_file.write(result.stderr.decode('utf-8'))
 
-jar_folder = "/home/msaee007/jars/"
-dataset_folder = "./datasets/"
-local_dataset_folder = "/home/msaee007/datasets/final/"
+jar_folder = "/home/msaee007/jars/" # this should point to the folder that contains the compiled JAR files
+dataset_folder = "./datasets/" # this should point to the folder containing the datasets on hdfs or locally if it is not used 
+local_dataset_folder = "/home/msaee007/datasets/final/" # this should point to the folder containing the datasets locally
 # no-pushdown, projection, filters, 
 pairs = [("nopushdown", "None"), ("pushdown", "projection_filters"), ("filters","filters"), ("projeciton", "projection")]
 output_folder = "/home/msaee007/json_exp_output/with_nopushdown/"
-jsondsp_jar = "jsondsp.jar"
+jsondsp_jar = "dsJSON-assembly-0.1.jar" # this should be the name of the JAR files for dsJSON
 pushdown_option = "None"
-master =  "spark://ec-hn.cs.ucr.edu:7077"
-hdfs = "hdfs://ec-hn.cs.ucr.edu:8040/"
+master =  "spark://ec-hn.cs.ucr.edu:7077" # replace your spark cluster address use 'local' for local mode
+hdfs = "hdfs://ec-hn.cs.ucr.edu:8040/" # path to hdfs cluster or use 'local' for local mode
 min_partition_size = "33554432" # 32MB
 max_partition_size = "2147483648" # 1GB
 
 for pair in pairs:
-    output_folder = "/home/msaee007/json_exp_output/with_" + pair[0]
+    output_folder = "/home/msaee007/json_exp_output/with_" + pair[0] # replace this folder with the path to store the output logs
     pushdown_option = pair[1]
     R = 5 # number of times to repeat an experiment
     params = [
